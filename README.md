@@ -2,7 +2,7 @@
 
 ## Project Milestones
 1.	Develop a modular data ingestion framework capable of handling multiple microscopy modalities such as X-ray, scanning acoustic microscopy, and optical imaging.
-    a. Implement a CT algorithm for 3D data such as x-ray and model in opencv
+    a. Implement a CT algorithm for 3D data such as x-ray and model in open3d
   	b. Create a script to seperate non-image data (headers, tool settings) from image data for each modality
   	c. Add support for time-series data such as SAM using FFT methods
   	d. Add preprocessing and smoothening algorithms to reduce noise affects
