@@ -88,3 +88,9 @@ result_icp = run_ICP(pcd1, pcd2, result_ransac.transformation, voxel_size)
 print("ICP registration result:")
 print(result_icp)
 draw_registration_result(pcd1, pcd2, result_icp.transformation)
+
+
+
+# Scaling, point cloud normalization,
+# Basic UI stack, writing paper (overleaf doc)
+# "Slice of missing data" demonstration with scaling
