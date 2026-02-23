@@ -1,26 +1,26 @@
-import numpy as np
 import sys
-from PySide6.QtWidgets import QApplication, QWidget, QMainWindow, QPushButton, QVBoxLayout, QLabel
+from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtUiTools import QUiLoader
+from PySide6.QtCore import QFile
+import os
 
-# setting up application
 class AppTest(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('MultiModal Scanner (Name WIP)')
 
-        self.button = QPushButton('click')
-        self.resize(500, 500)
+        #ui_path = os.path.join(os.path.dirname(__file__), "..", "UI_RoughDraft", "UI_V1.ui") # Path to GUI file .ui
+        ui_path = "UI_V1.ui"
+        ui_file = QFile(ui_path)
+        ui_file.open(QFile.ReadOnly)
 
-        layout = QVBoxLayout()
-        layout.addWidget(self.button)
+        loader = QUiLoader()
+        self.ui = loader.load(ui_file, self)
+        ui_file.close()
 
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
+        self.setCentralWidget(self.ui)
 
-# setting up window to open
 app = QApplication(sys.argv)
 window = AppTest()
 window.show()
-
 sys.exit(app.exec())
