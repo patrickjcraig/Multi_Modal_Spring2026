@@ -117,7 +117,7 @@
       <x>830</x>
       <y>40</y>
       <width>231</width>
-      <height>634</height>
+      <height>669</height>
      </rect>
     </property>
     <layout class="QVBoxLayout" name="verticalLayout">
@@ -443,32 +443,6 @@
      </item>
     </layout>
    </widget>
-   <widget class="QLabel" name="label_2">
-    <property name="geometry">
-     <rect>
-      <x>410</x>
-      <y>0</y>
-      <width>201</width>
-      <height>18</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Icon Bar (Change as needed)</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="label_3">
-    <property name="geometry">
-     <rect>
-      <x>830</x>
-      <y>10</y>
-      <width>271</width>
-      <height>31</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Algorithm Parameter Table goes below</string>
-    </property>
-   </widget>
    <widget class="QLabel" name="label_step_info">
     <property name="geometry">
      <rect>
@@ -529,7 +503,7 @@
      <x>0</x>
      <y>0</y>
      <width>1089</width>
-     <height>33</height>
+     <height>23</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFiles">
