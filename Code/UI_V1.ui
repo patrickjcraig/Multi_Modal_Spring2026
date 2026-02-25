@@ -55,7 +55,7 @@
      <rect>
       <x>0</x>
       <y>0</y>
-      <width>401</width>
+      <width>425</width>
       <height>27</height>
      </rect>
     </property>
@@ -66,14 +66,14 @@
         <bool>true</bool>
        </property>
        <property name="text">
-        <string>Icon 1</string>
+        <string>Perform Registration</string>
        </property>
       </widget>
      </item>
      <item>
       <widget class="QToolButton" name="toolButton_2">
        <property name="text">
-        <string>Icon 2</string>
+        <string>Save Data</string>
        </property>
       </widget>
      </item>
