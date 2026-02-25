@@ -12,6 +12,12 @@ from ui_OpenGLTest import Ui_Dialog
 class OpenGLRenderer(QOpenGLWidget):
     def initializeGL(self):
         """Initialize OpenGL settings"""
+        
+        format : QSurfaceFormat = QSurfaceFormat()
+        format.setSamples(4)
+        format.setMajorVersion(3)
+        format.setMinorVersion(3)
+
         glClearColor(0.1, 0.1, 0.1, 1.0)
         glEnable(GL_DEPTH_TEST)
         

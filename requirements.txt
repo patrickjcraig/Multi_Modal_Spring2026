@@ -3,3 +3,4 @@ matplotlib
 opencv-python
 PySide6
 PyOpenGL==3.1.6
+PyGLM>=2.5.0
