@@ -50,8 +50,9 @@ def import_dataset(voxel_size):
     return pcd1, pcd2, pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh
 
 # RANSAC 
-def run_RANSAC(pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh, voxel_size):
-    distance_threshold = voxel_size * 1.5
+def run_RANSAC(pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh, voxel_size, 
+               ransac_dist_multiplier=1.5, max_iterations=100000, validation_iterations=1000):
+    distance_threshold = voxel_size * ransac_dist_multiplier
     result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
         pcd1_down,
         pcd2_down,
@@ -65,13 +66,13 @@ def run_RANSAC(pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh, voxel_size):
             o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
             o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(distance_threshold),
         ],
-        o3d.pipelines.registration.RANSACConvergenceCriteria(100000, 1000),
+        o3d.pipelines.registration.RANSACConvergenceCriteria(max_iterations, validation_iterations),
     )
     return result
 
 
-def run_ICP(pcd1, pcd2, initial_transform, voxel_size):
-    distance_threshold = voxel_size * 0.4
+def run_ICP(pcd1, pcd2, initial_transform, voxel_size, icp_dist_multiplier=0.4):
+    distance_threshold = voxel_size * icp_dist_multiplier
     result = o3d.pipelines.registration.registration_icp(
         pcd1,
         pcd2,
@@ -81,15 +82,18 @@ def run_ICP(pcd1, pcd2, initial_transform, voxel_size):
     )
     return result
 
-def run_full_registration(voxel_size=2.0): # adding callable function for UI to interact with
+def run_full_registration(voxel_size=2.0, ransac_dist_multiplier=1.5, 
+                          ransac_max_iter=100000, ransac_validation=1000,
+                          icp_dist_multiplier=0.4): # adding callable function for UI to interact with
     pcd1, pcd2, pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh = import_dataset(voxel_size)
 
     result_ransac = run_RANSAC(
-        pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh, voxel_size
+        pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh, voxel_size,
+        ransac_dist_multiplier, ransac_max_iter, ransac_validation
     )
 
     result_icp = run_ICP(
-        pcd1, pcd2, result_ransac.transformation, voxel_size
+        pcd1, pcd2, result_ransac.transformation, voxel_size, icp_dist_multiplier
     )
 
     return {
