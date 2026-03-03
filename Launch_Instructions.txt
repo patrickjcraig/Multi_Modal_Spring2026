@@ -1,1 +1,2 @@
-
+When running from VSCode, after entering an environment in the Multi_Modal_Spring2026 folder, type the following line into the terminal:
+python3 Code/test.py
