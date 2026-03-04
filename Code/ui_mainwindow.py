@@ -54,7 +54,7 @@ class Ui_MainWindow(object):
         self.label.setGeometry(QRect(10, 30, 121, 18))
         self.horizontalLayoutWidget = QWidget(self.centralwidget)
         self.horizontalLayoutWidget.setObjectName(u"horizontalLayoutWidget")
-        self.horizontalLayoutWidget.setGeometry(QRect(0, 0, 425, 27))
+        self.horizontalLayoutWidget.setGeometry(QRect(0, 0, 626, 27))
         self.horizontalLayout = QHBoxLayout(self.horizontalLayoutWidget)
         self.horizontalLayout.setObjectName(u"horizontalLayout")
         self.horizontalLayout.setContentsMargins(0, 0, 0, 0)
@@ -64,15 +64,15 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout.addWidget(self.toolButton)
 
-        self.toolButton_2 = QToolButton(self.horizontalLayoutWidget)
-        self.toolButton_2.setObjectName(u"toolButton_2")
-
-        self.horizontalLayout.addWidget(self.toolButton_2)
-
         self.toolButton_3 = QToolButton(self.horizontalLayoutWidget)
         self.toolButton_3.setObjectName(u"toolButton_3")
 
         self.horizontalLayout.addWidget(self.toolButton_3)
+
+        self.toolButton_2 = QToolButton(self.horizontalLayoutWidget)
+        self.toolButton_2.setObjectName(u"toolButton_2")
+
+        self.horizontalLayout.addWidget(self.toolButton_2)
 
         self.toolButton_4 = QToolButton(self.horizontalLayoutWidget)
         self.toolButton_4.setObjectName(u"toolButton_4")
@@ -330,9 +330,9 @@ class Ui_MainWindow(object):
         self.actionLoad_Workspace.setText(QCoreApplication.translate("MainWindow", u"Load Workspace", None))
         self.actionImport_File.setText(QCoreApplication.translate("MainWindow", u"Import File", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"OpenGL Window", None))
-        self.toolButton.setText(QCoreApplication.translate("MainWindow", u"Perform Registration", None))
+        self.toolButton.setText(QCoreApplication.translate("MainWindow", u"Registration (Test Part)", None))
+        self.toolButton_3.setText(QCoreApplication.translate("MainWindow", u"Registration (Sample Point Cloud)", None))
         self.toolButton_2.setText(QCoreApplication.translate("MainWindow", u"Save Data", None))
-        self.toolButton_3.setText(QCoreApplication.translate("MainWindow", u"Icon 3", None))
         self.toolButton_4.setText(QCoreApplication.translate("MainWindow", u"Icon 4", None))
         self.toolButton_5.setText(QCoreApplication.translate("MainWindow", u"Icon 5", None))
         self.label_params_title.setText(QCoreApplication.translate("MainWindow", u"Registration Parameters", None))

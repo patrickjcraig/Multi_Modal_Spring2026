@@ -139,8 +139,6 @@ def get_pcd_from_ct_stack(
     pcd = mesh.sample_points_poisson_disk(number_of_points=n_points)
     return pcd, mesh, used_level
 
-
-
 if __name__ == "__main__":
     folder = os.path.join("..", "reconstruction_v1")
 

@@ -1,5 +1,6 @@
 import os
 import copy
+import numpy as np
 from PySide6.QtWidgets import QMainWindow
 from ui_mainwindow import Ui_MainWindow
 from Widgets.triangle_widget import TriangleWidget
@@ -7,6 +8,7 @@ from Widgets.pointcloud_widget import PointCloudWidget
 from GUI.icp_worker import ICPWorkerThread
 from Utils.dataframe_utils import pcd_to_df, tf_to_df, reg_to_df
 from GUI.workspace_controller import WorkspaceController
+from makeGeometry import get_pcd_from_ct_stack
 
 class AppTest(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -60,6 +62,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
     def setup_connections(self):
         self.toolButton.clicked.connect(self.run_scan)
         self.toolButton_2.clicked.connect(self.save_df)
+        self.toolButton_3.clicked.connect(self.ct_demo)
         self.btn_prev_step.clicked.connect(self._prev_step)
         self.btn_next_step.clicked.connect(self._next_step)
         self.actionSave_Workspace.triggered.connect(self.workspace_controller.save)
@@ -251,3 +254,56 @@ class AppTest(QMainWindow, Ui_MainWindow):
 
         self.btn_prev_step.setEnabled(False)
         self.btn_next_step.setEnabled(False)
+
+    def ct_demo(self): # temporary function for a button to show pointcloud in software, will be replaced eventually once file importing is done
+        """
+        Generates the demo CT point cloud and displays it in the OpenGL viewer.
+        """
+
+        try:
+            self.statusbar.showMessage("Generating demo CT point cloud...")
+            # this is where reconstruction_v1 is located, adjust if needed
+            demo_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'reconstruction_v1'))
+
+            # Call the main function logic in the module
+            pcd, mesh, level = get_pcd_from_ct_stack(
+                folder_path=demo_folder,    # None will trigger the default in your function
+                downsample_zyx=4,
+                crop_zyx=(256, 256, 256),
+                level=None,
+                n_points=5000,
+            )
+
+            print("MC level:", level)
+            print("PCD points:", np.asarray(pcd.points).shape[0])
+            print("Mesh verts:", np.asarray(mesh.vertices).shape[0])
+
+            # Reset previous scan & OpenGL widget
+            self.scan_reset()
+
+            # Store internally if needed
+            self.pcd1 = pcd
+            self.mesh1 = mesh
+
+            # Replace the TriangleWidget with your point cloud widget
+            geometry_widget_geometry = self.openGLWidget.geometry()
+            parent = self.openGLWidget.parent()
+
+            self.openGLWidget.setParent(None)
+            self.openGLWidget.deleteLater()
+
+            # Use your existing PointCloudWidget
+            self.openGLWidget = PointCloudWidget(parent)
+            self.openGLWidget.setGeometry(geometry_widget_geometry)
+            self.openGLWidget.show()
+
+            # Add the point cloud(s)
+            self.openGLWidget.add_point_cloud("Demo CT", pcd)
+            self.openGLWidget.update()
+
+            self.statusbar.showMessage("Demo CT point cloud generated and displayed.")
+
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", str(e))
+            self.statusbar.showMessage("Error generating demo CT point cloud.")
