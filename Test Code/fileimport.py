@@ -1,55 +1,134 @@
 import os
-from PIL import Image
-import open3d as o3d
 import numpy as np
+import tifffile as tiff
+import dask.array as da
+from dask import delayed
+import napari
 
-# TIFF stack → NumPy 3D array → threshold → voxel grid → Open3D point cloud
+from skimage.measure import marching_cubes
 
-# Tiff image dimensions 2938 x 2938 pixels @ 3661 x 3661 DPI  - 16 bit depth
-# 2x downspampling should be sufficient
+def sorted_tiffs(folder):
+    files = [f for f in os.listdir(folder) if f.lower().endswith((".tif", ".tiff"))]
+    files.sort()  # lexicographic; ok if zero-padded like slice_%04d.tif :contentReference[oaicite:3]{index=3}
+    return [os.path.join(folder, f) for f in files]
 
-# This handles the reconstructed x-ray images
-class ImportReconstruction:
+def lazy_slice(path, yx_roi=None, downsample=1):
+    a = tiff.imread(path)  # uint16
+    if yx_roi is not None:
+        y0, y1, x0, x1 = yx_roi
+        a = a[y0:y1, x0:x1]
+    if downsample > 1:
+        a = a[::downsample, ::downsample]  # in-plane only
+    return a
 
-    # folder_path (string, path to TIFF stack)
-    # downsampling (number, default=2)
-    # data (3D numpy array)
-    def __init__(self, folder_path, downsampling=2):
-        self.folder_path = folder_path
-        self.downsampling = downsampling
-        self.data = self.load_images()
+def make_lazy_volume(folder, yx_roi=None, downsample=1):
+    paths = sorted_tiffs(folder)
+    if not paths:
+        raise FileNotFoundError("No tif/tiff files found")
 
+    a0 = lazy_slice(paths[0], yx_roi=yx_roi, downsample=downsample)
+    H, W = a0.shape
+    dtype = a0.dtype
 
-    def load_images(self):
-        # Sort files to preserve slice order
-        file_list = sorted(os.listdir(self.folder_path))
-        image_files = [f for f in file_list if f.lower().endswith(".tiff")]
+    lazy_arrays = [
+        da.from_delayed(
+            delayed(lazy_slice)(p, yx_roi=yx_roi, downsample=downsample),
+            shape=(H, W),
+            dtype=dtype,
+        )
+        for p in paths
+    ]
 
-        volume = []
+    vol = da.stack(lazy_arrays, axis=0)  # (Z, Y, X)
+    return vol
 
-        for image_file in image_files:
-            image_path = os.path.join(self.folder_path, image_file)
+def center_crop_bounds(shape_zyx, crop_zyx):
+    """Return z0:z1, y0:y1, x0:x1 centered in the volume."""
+    Z, Y, X = shape_zyx
+    cz, cy, cx = crop_zyx
 
-            # Open as grayscale
-            image = Image.open(image_path)
+    z0 = max(0, Z // 2 - cz // 2)
+    y0 = max(0, Y // 2 - cy // 2)
+    x0 = max(0, X // 2 - cx // 2)
 
-            # Downsample
-            if self.downsampling > 1:
-                new_size = (
-                    image.width // self.downsampling,
-                    image.height // self.downsampling
-                )
-                image = image.resize(new_size, Image.Resampling.LANCZOS)
+    z1 = min(Z, z0 + cz)
+    y1 = min(Y, y0 + cy)
+    x1 = min(X, x0 + cx)
 
-            # Convert to numpy (preserves 16-bit if present)
-            image_array = np.array(image)
+    return (z0, z1, y0, y1, x0, x1)
 
-            volume.append(image_array)
+def mesh_from_subvolume(subvol_np, spacing_zyx_mm, level=None):
+    """
+    subvol_np: numpy array (Z,Y,X)
+    spacing_zyx_mm: tuple (sz, sy, sx)
+    level: iso threshold; if None, pick a high percentile as a starting point
+    """
+    print("Subvolume dtype:", subvol_np.dtype, "shape:", subvol_np.shape)
+    vmin, vmax = int(subvol_np.min()), int(subvol_np.max())
+    print("Subvolume range:", vmin, "to", vmax)
 
-        # Stack into 3D numpy array (Z, Y, X)
-        volume = np.stack(volume, axis=0)
+    if level is None:
+        # Start-point heuristic; adjust after you see the mesh
+        level = float(np.percentile(subvol_np, 99.5))
+        print("Auto level (99.5th percentile):", level)
+    else:
+        print("Using level:", level)
 
-        return volume
+    verts, faces, normals, values = marching_cubes(
+        subvol_np,
+        level=level,
+        spacing=spacing_zyx_mm,  # IMPORTANT: makes geometry correct in mm
+        allow_degenerate=False,
+    )
+
+    # napari expects faces as (N, 3) int
+    faces = faces.astype(np.int32, copy=False)
+    return verts, faces, normals, values, level
+
+if __name__ == "__main__":
+    folder = os.path.join("..", "reconstruction_v1")
+
+    # Keep ROI off for now
+    yx_roi = None
+
     
+    loader_downsample = 1
+    vol = make_lazy_volume(folder, yx_roi=yx_roi, downsample=loader_downsample)  # (Z,Y,X)
 
-    
+    view_downsample = 4
+    vol_ds = vol[::view_downsample, ::view_downsample, ::view_downsample]  # (Z,Y,X)
+
+    crop_zyx = (256, 256, 256)
+    z0, z1, y0, y1, x0, x1 = center_crop_bounds(vol_ds.shape, crop_zyx)
+    sub = vol_ds[z0:z1, y0:y1, x0:x1].compute()  # small numpy array
+
+    base_voxel_mm = 0.006937965888099794
+
+    s = base_voxel_mm * view_downsample
+    spacing_zyx_mm = (s, s, s)
+    print("Spacing (Z,Y,X) mm:", spacing_zyx_mm)
+
+    verts, faces, normals, values, level = mesh_from_subvolume(
+        subvol_np=sub,
+        spacing_zyx_mm=spacing_zyx_mm,
+        level=None,  # start with auto; you can set a fixed number later
+    )
+
+    # ----- Napari visualization -----
+    import napari
+    viewer = napari.Viewer()
+
+    viewer.add_image(
+        vol_ds,
+        name="CT downsampled (iso)",
+        contrast_limits=(vol_ds.min().compute(), vol_ds.max().compute()),
+    )
+
+    viewer.add_surface(
+        (verts, faces),
+        name=f"MC mesh (level={level:.1f})",
+        opacity=0.8,
+    )
+
+    viewer.dims.ndisplay = 3
+    napari.run()

@@ -1,0 +1,103 @@
+# Tiff image dimensions 2938 x 2938 pixels @ 3661 x 3661 DPI  - 16 bit depth
+
+
+[General_Info]
+software_version = 2025.7.0
+path_to_data = Z:/20250908/20250908_P100/20250908_P100_000.h5
+
+[Detektor_Info]
+pixel_size = 0.0495
+num_px_u = 2940
+num_px_v = 1704
+
+[ROI]
+roi_posx = 0
+roi_posy = 246
+roi_posz = 0
+roi_sizex = 2938
+roi_sizey = 1124
+roi_sizez = 2938
+
+[VolumeData]
+volume_rotation_y = 0.0
+volume_rotation_x = 0.0
+volume_rotation_z = 0.0
+voxel_size = 0.006937965888099794
+
+[Proj_Filters]
+median_filter_size = 0
+gauss_filter_size = 0.5
+outlier_size = 0
+outlier_delta = 0
+
+[Ringfilter_Settings]
+ring_partial_delta = 0.0
+ring_partial_size = 5
+ring_a_size = 0
+ring_b_size = 0
+
+[Reconstruction_Settings]
+sod = 73.9581300379745
+sdd = 527.6658167433036
+freeray = None
+reco_type = FDK
+reg_type = None
+iterations = 0
+reg_threshold = 0.0
+reg_lambda = 0.0
+apply_roundmask = 0
+fdk_filter = hamming
+roi_filter = 1
+is_short_scan = 0
+is_offset_scan = 0
+is_detector_offset = 0
+offset_shift = 0
+img_binning = 1.0
+is_opt_oblique_geom = 0
+is_opt_proj_offset_v = 0
+is_opt_proj_slant_v = 0
+is_opt_oblique_angle = 0
+is_align_axis = 0
+is_opt_jitter = 0
+jitter_smooth = 1
+jitter_iterations = 3
+shift_u_max = 10
+shift_v_max = 10
+
+[BHC_Values]
+bhc_cupping_value = 0.0
+bhc_streak_value = 0.0
+bhc_streak_thl_value = 0.0
+starvation_value = 0.0
+scatter_value = 0.0
+dual_energy_factor = 0.0
+
+[GC_Values]
+rotation_axis_offset = [21.57]
+cs_y_slice = 852
+rotation_axis_tilt = 0.0
+tilt_y_slice_min = None
+tilt_y_slice_max = None
+drift_x = 0.0
+drift_y = 0.0
+drift_z = 0.0
+
+[Global_Reco_Settings]
+gcf = None
+rotation_axis_tilt = 0.0
+rotation_axis_slant = 0.0
+det_rot_eta = 0.0
+det_rot_theta = 0.0
+det_rot_phi = 0.0
+det_offset_u = 0.0
+det_offset_v = 0.0
+
+[Post_Filters]
+
+[Final_Image_Settings]
+save_path = Z:\20250908\20250908_P100\reconstruction_v1\slice_%04d.tif
+min = -2.8540885
+max = 0.8502095
+export_type = tif16
+export_order = xzy
+

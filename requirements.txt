@@ -6,3 +6,8 @@ PyOpenGL==3.1.6
 PyGLM>=2.5.0
 jupyter
 ipykernel
+h5py
+scikit-image
+tiffffile
+dask
+napari
