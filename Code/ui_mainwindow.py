@@ -28,6 +28,10 @@ class Ui_MainWindow(object):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
         MainWindow.resize(1089, 711)
+        self.actionSave_Workspace = QAction(MainWindow)
+        self.actionSave_Workspace.setObjectName(u"actionSave_Workspace")
+        self.actionLoad_Workspace = QAction(MainWindow)
+        self.actionLoad_Workspace.setObjectName(u"actionLoad_Workspace")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.progressBar = QProgressBar(self.centralwidget)
@@ -309,6 +313,8 @@ class Ui_MainWindow(object):
         self.menubar.addAction(self.menuFiles.menuAction())
         self.menubar.addAction(self.menuTools.menuAction())
         self.menubar.addAction(self.menuHelp.menuAction())
+        self.menuFiles.addAction(self.actionSave_Workspace)
+        self.menuFiles.addAction(self.actionLoad_Workspace)
 
         self.retranslateUi(MainWindow)
 
@@ -317,6 +323,8 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"MainWindow", None))
+        self.actionSave_Workspace.setText(QCoreApplication.translate("MainWindow", u"Save Workspace", None))
+        self.actionLoad_Workspace.setText(QCoreApplication.translate("MainWindow", u"Load Workspace", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"OpenGL Window", None))
         self.toolButton.setText(QCoreApplication.translate("MainWindow", u"Perform Registration", None))
         self.toolButton_2.setText(QCoreApplication.translate("MainWindow", u"Save Data", None))

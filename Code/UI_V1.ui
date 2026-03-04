@@ -510,6 +510,8 @@
     <property name="title">
      <string>Files</string>
     </property>
+    <addaction name="actionSave_Workspace"/>
+    <addaction name="actionLoad_Workspace"/>
    </widget>
    <widget class="QMenu" name="menuTools">
     <property name="title">
@@ -526,6 +528,16 @@
    <addaction name="menuHelp"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionSave_Workspace">
+   <property name="text">
+    <string>Save Workspace</string>
+   </property>
+  </action>
+  <action name="actionLoad_Workspace">
+   <property name="text">
+    <string>Load Workspace</string>
+   </property>
+  </action>
  </widget>
  <resources/>
  <connections/>

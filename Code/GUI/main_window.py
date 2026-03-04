@@ -6,6 +6,7 @@ from Widgets.triangle_widget import TriangleWidget
 from Widgets.pointcloud_widget import PointCloudWidget
 from GUI.icp_worker import ICPWorkerThread
 from Utils.dataframe_utils import pcd_to_df, tf_to_df, reg_to_df
+from GUI.workspace_controller import WorkspaceController
 
 class AppTest(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -15,6 +16,9 @@ class AppTest(QMainWindow, Ui_MainWindow):
         
         # Initialize worker thread for ICP
         self.icp_thread = None
+
+        # Initialize WorkspaceController to allow for saving and loading workspaces
+        self.workspace_controller = WorkspaceController(self)
         
         # Replace the placeholder OpenGL widget with our custom triangle widget
         self._setup_opengl_widget()
@@ -58,6 +62,8 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.toolButton_2.clicked.connect(self.save_df)
         self.btn_prev_step.clicked.connect(self._prev_step)
         self.btn_next_step.clicked.connect(self._next_step)
+        self.actionSave_Workspace.triggered.connect(self.workspace_controller.save)
+        self.actionLoad_Workspace.triggered.connect(self.workspace_controller.load)
         
         # Initialize step tracking
         self.current_step = 0  # 0 = original, 1 = RANSAC, 2 = ICP
@@ -233,3 +239,15 @@ class AppTest(QMainWindow, Ui_MainWindow):
         # right now, this is just the names of the files, we can change this later to have a current date and time if we want to
 
         self.statusbar.showMessage('The data has been saved successfully.')
+
+    def scan_reset(self): # function that resets scanning data (mainly for when loading a workspace from a .pkl file)
+        self.pcd1 = None
+        self.pcd2 = None
+        self.ransac_result = None
+        self.icp_result = None
+        self.current_step = 0
+
+        self._setup_opengl_widget()
+
+        self.btn_prev_step.setEnabled(False)
+        self.btn_next_step.setEnabled(False)
