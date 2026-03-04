@@ -512,6 +512,7 @@
     </property>
     <addaction name="actionSave_Workspace"/>
     <addaction name="actionLoad_Workspace"/>
+    <addaction name="actionImport_File"/>
    </widget>
    <widget class="QMenu" name="menuTools">
     <property name="title">
@@ -536,6 +537,11 @@
   <action name="actionLoad_Workspace">
    <property name="text">
     <string>Load Workspace</string>
+   </property>
+  </action>
+  <action name="actionImport_File">
+   <property name="text">
+    <string>Import File</string>
    </property>
   </action>
  </widget>
