@@ -1,4 +1,7 @@
 .venv/
 TestData/
 reconstruction_v1/
-Test Code/h5_code/
+__pycache__/
+*.py[codz]
+*$py.class
+.ipynb_checkpoints
