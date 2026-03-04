@@ -88,9 +88,9 @@ def mesh_from_subvolume(subvol_np, spacing_zyx_mm, level=None):
 if __name__ == "__main__":
     folder = os.path.join("..", "reconstruction_v1")
 
-    # Keep ROI off for now
-    #yx_roi = None #
-    yx_roi = (246, 246 + 1124, 0, 2938)
+
+    yx_roi = None
+    #yx_roi = (246, 246 + 1124, 0, 2938)
     
     loader_downsample = 1
     vol = make_lazy_volume(folder, yx_roi=yx_roi, downsample=loader_downsample)  # (Z,Y,X)

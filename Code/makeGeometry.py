@@ -70,7 +70,7 @@ def _center_crop_bounds(shape_zyx, crop_zyx):
 def get_mesh_from_ct_stack(
     folder_path: str,
     voxel_size_mm: float = 0.006937965888099794,  
-    downsample_zyx: int = 3,                      
+    downsample_zyx: int = 2,                      
     crop_zyx: tuple[int, int, int] = (256, 256, 256),
     level: float | None = None,
 ):
@@ -120,7 +120,7 @@ def get_mesh_from_ct_stack(
 def get_pcd_from_ct_stack(
     folder_path: str,
     voxel_size_mm: float = 0.006937965888099794,
-    downsample_zyx: int = 4,
+    downsample_zyx: int = 2,
     crop_zyx: tuple[int, int, int] = (256, 256, 256),
     level: float | None = None,
     n_points: int = 2000,
@@ -146,10 +146,10 @@ if __name__ == "__main__":
 
     pcd, mesh, level = get_pcd_from_ct_stack(
         folder_path=folder,
-        downsample_zyx=4,
+        downsample_zyx=1,
         crop_zyx=(256, 256, 256),
         level=None,
-        n_points=5000,
+        n_points=10_000,
     )
 
     print("MC level:", level)
@@ -158,4 +158,4 @@ if __name__ == "__main__":
 
     o3d.visualization.draw_geometries([mesh])
     # or:
-    # o3d.visualization.draw_geometries([pcd])
+    #o3d.visualization.draw_geometries([pcd])
