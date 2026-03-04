@@ -8,6 +8,6 @@ jupyter
 ipykernel
 h5py
 scikit-image
-tiffffile
+tifffile
 dask
 napari
