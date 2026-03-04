@@ -9,7 +9,7 @@ from skimage.measure import marching_cubes
 
 def sorted_tiffs(folder):
     files = [f for f in os.listdir(folder) if f.lower().endswith((".tif", ".tiff"))]
-    files.sort()  # lexicographic; ok if zero-padded like slice_%04d.tif :contentReference[oaicite:3]{index=3}
+    files.sort()
     return [os.path.join(folder, f) for f in files]
 
 def lazy_slice(path, yx_roi=None, downsample=1):
@@ -89,8 +89,8 @@ if __name__ == "__main__":
     folder = os.path.join("..", "reconstruction_v1")
 
     # Keep ROI off for now
-    yx_roi = None
-
+    #yx_roi = None #
+    yx_roi = (246, 246 + 1124, 0, 2938)
     
     loader_downsample = 1
     vol = make_lazy_volume(folder, yx_roi=yx_roi, downsample=loader_downsample)  # (Z,Y,X)
