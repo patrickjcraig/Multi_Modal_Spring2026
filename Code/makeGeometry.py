@@ -140,20 +140,20 @@ def get_pcd_from_ct_stack(
     return pcd, mesh, used_level
 
 if __name__ == "__main__":
-    folder = os.path.join("..", "reconstruction_v1")
+    folder = os.path.join("..", "120kv_FDK")
 
     pcd, mesh, level = get_pcd_from_ct_stack(
         folder_path=folder,
         downsample_zyx=1,
         crop_zyx=(256, 256, 256),
         level=None,
-        n_points=10_000,
+        n_points=50_000,
     )
 
     print("MC level:", level)
     print("Mesh verts:", np.asarray(mesh.vertices).shape[0])
     print("PCD points:", np.asarray(pcd.points).shape[0])
 
-    o3d.visualization.draw_geometries([mesh])
+    #o3d.visualization.draw_geometries([mesh])
     # or:
-    #o3d.visualization.draw_geometries([pcd])
+    o3d.visualization.draw_geometries([pcd])

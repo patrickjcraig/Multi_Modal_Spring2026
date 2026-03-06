@@ -86,8 +86,8 @@ def mesh_from_subvolume(subvol_np, spacing_zyx_mm, level=None):
     return verts, faces, normals, values, level
 
 if __name__ == "__main__":
-    folder = os.path.join("..", "reconstruction_v1")
-
+    #folder = os.path.join("..", "reconstruction_v1")
+    folder = os.path.join("..", "120kv_FDK")
 
     yx_roi = None
     #yx_roi = (246, 246 + 1124, 0, 2938)

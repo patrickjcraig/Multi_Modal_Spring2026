@@ -263,7 +263,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         try:
             self.statusbar.showMessage("Generating demo CT point cloud...")
             # this is where reconstruction_v1 is located, adjust if needed
-            demo_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'reconstruction_v1'))
+            demo_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '120kv_FDK'))
 
             # Call the main function logic in the module
             pcd, mesh, level = get_pcd_from_ct_stack(
