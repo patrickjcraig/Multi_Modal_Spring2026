@@ -503,16 +503,22 @@
      <x>0</x>
      <y>0</y>
      <width>1089</width>
-     <height>23</height>
+     <height>33</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFiles">
     <property name="title">
-     <string>Files</string>
+     <string>File</string>
     </property>
+    <widget class="QMenu" name="menuImport_2">
+     <property name="title">
+      <string>Import</string>
+     </property>
+     <addaction name="actionImport_XRay"/>
+    </widget>
     <addaction name="actionSave_Workspace"/>
     <addaction name="actionLoad_Workspace"/>
-    <addaction name="actionImport_File"/>
+    <addaction name="menuImport_2"/>
    </widget>
    <widget class="QMenu" name="menuTools">
     <property name="title">
@@ -539,9 +545,19 @@
     <string>Load Workspace</string>
    </property>
   </action>
-  <action name="actionImport_File">
+  <action name="actionX_Ray">
    <property name="text">
-    <string>Import File</string>
+    <string>X-Ray</string>
+   </property>
+  </action>
+  <action name="actionPoint_Cloud">
+   <property name="text">
+    <string>Point Cloud</string>
+   </property>
+  </action>
+  <action name="actionImport_XRay">
+   <property name="text">
+    <string>X-Ray</string>
    </property>
   </action>
  </widget>
