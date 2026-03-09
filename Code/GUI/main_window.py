@@ -8,6 +8,8 @@ from Widgets.pointcloud_widget import PointCloudWidget
 from GUI.icp_worker import ICPWorkerThread
 from Utils.dataframe_utils import pcd_to_df, tf_to_df, reg_to_df
 from GUI.workspace_controller import WorkspaceController
+from PySide6.QtWidgets import QDialog
+from GUI.dialogs.xray_import_dialog import XRayImportDialog
 from makeGeometry import get_pcd_from_ct_stack
 
 class AppTest(QMainWindow, Ui_MainWindow):
@@ -68,6 +70,8 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.actionSave_Workspace.triggered.connect(self.workspace_controller.save)
         self.actionLoad_Workspace.triggered.connect(self.workspace_controller.load)
         
+        self.actionImport_XRay.triggered.connect(self.open_xray_dialog)
+
         # Initialize step tracking
         self.current_step = 0  # 0 = original, 1 = RANSAC, 2 = ICP
 
@@ -307,3 +311,92 @@ class AppTest(QMainWindow, Ui_MainWindow):
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error", str(e))
             self.statusbar.showMessage("Error generating demo CT point cloud.")
+
+
+    # X-ray import dialog and loading functions
+    def open_xray_dialog(self):
+        dialog = XRayImportDialog(self)
+
+        if dialog.exec():
+            params = dialog.get_import_params()
+
+            if params.import_type == "tiff stack folder":
+                self.load_tiff_stack(params.path)
+
+            elif params.import_type == "h5":
+                print("H5 import skeleton")
+
+            elif params.import_type == "npy":
+                print("NPY import skeleton")
+
+
+    def import_xray_data(self, params):
+        import_type = params.import_type
+        path = params.path
+
+        if import_type == "tiff stack folder":
+            self.load_tiff_stack(path)
+
+        elif import_type == "h5":
+            self.statusbar.showMessage("H5 import not implemented yet.")
+            print(f"[TODO] H5 import skeleton: {path}")
+
+        elif import_type == "npy":
+            self.statusbar.showMessage("NPY import not implemented yet.")
+            print(f"[TODO] NPY import skeleton: {path}")
+
+        else:
+            self.statusbar.showMessage(f"Unknown import type: {import_type}")
+   
+    def load_h5(self, file_path):
+        self.statusbar.showMessage("H5 import not implemented yet.")
+        print(f"[TODO] load_h5: {file_path}")
+
+
+    def load_npy(self, file_path):
+        self.statusbar.showMessage("NPY import not implemented yet.")
+        print(f"[TODO] load_npy: {file_path}")
+
+    def load_tiff_stack(self, folder_path):
+        """
+        Load a TIFF stack from a folder and convert it to a point cloud.
+        """
+
+        try:
+            self.statusbar.showMessage("Loading TIFF stack...")
+
+            pcd, mesh, level = get_pcd_from_ct_stack(
+                folder_path=folder_path,
+                downsample_zyx=4,
+                crop_zyx=(256,256,256),
+                level=None,
+                n_points=5000
+            )
+
+            print("MC level:", level)
+
+            # reset current scene
+            self.scan_reset()
+
+            self.pcd1 = pcd
+            self.mesh1 = mesh
+
+            geometry = self.openGLWidget.geometry()
+            parent = self.openGLWidget.parent()
+
+            self.openGLWidget.setParent(None)
+            self.openGLWidget.deleteLater()
+
+            self.openGLWidget = PointCloudWidget(parent)
+            self.openGLWidget.setGeometry(geometry)
+            self.openGLWidget.show()
+
+            self.openGLWidget.add_point_cloud("Imported CT", pcd)
+            self.openGLWidget.update()
+
+            self.statusbar.showMessage("TIFF stack imported successfully.")
+
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Import Error", str(e))
+            self.statusbar.showMessage("Error importing TIFF stack.")
