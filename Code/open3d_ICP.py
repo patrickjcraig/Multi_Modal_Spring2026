@@ -82,25 +82,98 @@ def run_ICP(pcd1, pcd2, initial_transform, voxel_size, icp_dist_multiplier=0.4):
     )
     return result
 
-def run_full_registration(voxel_size=2.0, ransac_dist_multiplier=1.5, 
-                          ransac_max_iter=100000, ransac_validation=1000,
-                          icp_dist_multiplier=0.4): # adding callable function for UI to interact with
+def run_full_registration(
+    voxel_size=2.0,
+    ransac_dist_multiplier=1.5,
+    ransac_max_iter=100000,
+    ransac_validation=1000,
+    icp_dist_multiplier=0.4,
+    icp_max_iter=50,
+    step_callback=None,
+    ransac_step=1,
+    icp_step=1,
+):
+    """Run a full registration pipeline and optionally report intermediate steps.
+
+    The behaviour is similar to the original function, but when a
+    ``step_callback`` is provided the RANSAC and ICP stages are executed using
+    the helpers in ``Registration/registration_steps.py``.  Those helpers
+    repeatedly invoke Open3D with increasing iteration limits and call back
+    for each increment.  ``step_callback`` is therefore called with three
+    arguments: ``(stage, iteration, data)`` where ``stage`` is an integer
+    (0=raw clouds, 1=ransac, 2=icp) and ``iteration`` is the cumulative
+    iteration count within that stage.  ``data`` is a dictionary containing
+    the objects produced at that iteration.
+
+    The parameters ``ransac_step`` and ``icp_step`` control how often the
+    callback occurs.  For example ``ransac_step=1000`` will report every
+    thousandth RANSAC iteration.
+    """
+    # import here to avoid circular dependency
+    from Registration import registration_steps
+
     pcd1, pcd2, pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh = import_dataset(voxel_size)
 
-    result_ransac = run_RANSAC(
-        pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh, voxel_size,
-        ransac_dist_multiplier, ransac_max_iter, ransac_validation
-    )
+    # stage 0: raw clouds
+    if step_callback is not None:
+        step_callback(0, 0, {"pcd1": pcd1, "pcd2": pcd2})
 
-    result_icp = run_ICP(
-        pcd1, pcd2, result_ransac.transformation, voxel_size, icp_dist_multiplier
-    )
+    # stage 1: ransac
+    if step_callback is None:
+        result_ransac = run_RANSAC(
+            pcd1_down,
+            pcd2_down,
+            pcd1_fpfh,
+            pcd2_fpfh,
+            voxel_size,
+            ransac_dist_multiplier,
+            ransac_max_iter,
+            ransac_validation,
+        )
+    else:
+        def r_cb(it, res):
+            step_callback(1, it, {"ransac": res, "total": ransac_max_iter})
+        result_ransac = registration_steps.iterative_ransac(
+            pcd1_down,
+            pcd2_down,
+            pcd1_fpfh,
+            pcd2_fpfh,
+            voxel_size,
+            ransac_dist_multiplier,
+            ransac_max_iter,
+            ransac_validation,
+            step=ransac_step,
+            callback=r_cb,
+        )
+
+    # stage 2: icp
+    if step_callback is None:
+        result_icp = run_ICP(
+            pcd1,
+            pcd2,
+            result_ransac.transformation,
+            voxel_size,
+            icp_dist_multiplier,
+        )
+    else:
+        def i_cb(it, res):
+            step_callback(2, it, {"icp": res, "total": icp_max_iter})
+        result_icp = registration_steps.iterative_icp(
+            pcd1,
+            pcd2,
+            result_ransac.transformation,
+            voxel_size,
+            icp_dist_multiplier,
+            max_iterations=icp_max_iter,
+            step=icp_step,
+            callback=i_cb,
+        )
 
     return {
         "pcd1": pcd1,
         "pcd2": pcd2,
         "ransac": result_ransac,
-        "icp": result_icp
+        "icp": result_icp,
     }
 
 if __name__ == "__main__": # this is so this does not run until the main window is open, allows this to be imported into test.py
@@ -122,15 +195,49 @@ if __name__ == "__main__": # this is so this does not run until the main window 
     # Try to load real data, fallback to synthetic if file doesn't exist
     try:
         voxel_size = 2.0
-        pcd1, pcd2, pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh = import_dataset(voxel_size)
 
-        result_ransac = run_RANSAC(pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh, voxel_size)
-        result_icp = run_ICP(pcd1, pcd2, result_ransac.transformation, voxel_size)
+        # create a single viewer window that will show both stages and a
+        # progress bar in its status bar
+        from GUI.icp_worker import PointCloudViewerWindow
+        viewer = PointCloudViewerWindow()
+        viewer.show()
 
-        print(result_icp)
-        
-        # Visualize with OpenGL
-        draw_registration_result(pcd1, pcd2, result_icp.transformation)
+        saved = {}
+        def cb(stage, it, data):
+            # store things we might need later (pcd1/pcd2, results)
+            saved.update(data)
+            total = data.get('total')
+            viewer.update_stage(stage, it, total)
+
+            if stage == 0:
+                # raw clouds: show both original point clouds
+                viewer.clear()
+                viewer.add_point_cloud("Source", saved['pcd1'])
+                viewer.add_point_cloud("Target", saved['pcd2'])
+            elif stage == 1:
+                # RANSAC iteration: transform source and redisplay
+                import copy as _copy
+                src = _copy.deepcopy(saved['pcd1'])
+                src.transform(saved['ransac'].transformation)
+                viewer.clear()
+                viewer.add_point_cloud("Source", src)
+                viewer.add_point_cloud("Target", saved['pcd2'])
+            elif stage == 2:
+                import copy as _copy
+                src = _copy.deepcopy(saved['pcd1'])
+                src.transform(saved['icp'].transformation)
+                viewer.clear()
+                viewer.add_point_cloud("Source", src)
+                viewer.add_point_cloud("Target", saved['pcd2'])
+
+        results = run_full_registration(
+            voxel_size=voxel_size,
+            step_callback=cb,
+            ransac_step=1,
+            icp_step=1,
+        )
+        # final result already displayed by callback, but keep reference
+        print(results['icp'])
     except (FileNotFoundError, RuntimeError) as e:
         print(f"Could not load real data: {e}")
         print("Creating synthetic point clouds for testing...")

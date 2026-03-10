@@ -73,7 +73,10 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.actionImport_XRay.triggered.connect(self.open_xray_dialog)
 
         # Initialize step tracking
-        self.current_step = 0  # 0 = original, 1 = RANSAC, 2 = ICP
+        # ``step_history`` will hold tuples (stage, iter, data).  ``current_step``
+        # is now an index into that list.
+        self.step_history = []
+        self.current_step = 0  # index into history, 0 means start
 
     # functions for running registration and saving as df
     def run_scan(self): # function for running 3D scan from open3d_ICP file
@@ -81,7 +84,13 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.toolButton.setEnabled(False)
         self.progressBar.setValue(0)
         self.statusbar.showMessage('Currently running ICP registration...')
-        
+
+        # reset history and UI state
+        self.step_history = []
+        self.current_step = 0
+        self.btn_prev_step.setEnabled(False)
+        self.btn_next_step.setEnabled(False)
+
         # Clear previous results
         self.label_ransac_fitness.setText("--")
         self.label_ransac_rmse.setText("--")
@@ -103,51 +112,119 @@ class AppTest(QMainWindow, Ui_MainWindow):
             ransac_validation=ransac_validation,
             icp_dist_mult=icp_dist_mult
         )
+        self.icp_thread.step.connect(self._on_registration_step)  # new signal for intermediate updates
         self.icp_thread.finished.connect(self._on_registration_complete)
         self.icp_thread.error.connect(self._on_registration_error)
         self.icp_thread.start()
     
     def _on_registration_complete(self, results):
         """Called when ICP registration is complete."""
-        # Store the results
-        self.pcd1 = results['pcd1']
-        self.pcd2 = results['pcd2']
-        self.ransac_result = results['ransac']
-        self.icp_result = results['icp']
-        
+        # in case steps didn't populate all attributes, make sure we have them
+        self.pcd1 = results.get('pcd1', getattr(self, 'pcd1', None))
+        self.pcd2 = results.get('pcd2', getattr(self, 'pcd2', None))
+        self.ransac_result = results.get('ransac', getattr(self, 'ransac_result', None))
+        self.icp_result = results.get('icp', getattr(self, 'icp_result', None))
+
         # Update the results labels
         self._update_results_display()
-        
-        # Display the registered point clouds in the OpenGL viewer (start at final ICP result)
-        self.current_step = 2
+
+# Display the registered point clouds in the OpenGL viewer (start at final history entry)
+        if self.step_history:
+            self.current_step = len(self.step_history) - 1
+        else:
+            self.current_step = 0
         self._display_registration_results()
-        
+
         # Enable navigation buttons
-        self.btn_prev_step.setEnabled(True)
+        self.btn_prev_step.setEnabled(self.current_step > 0)
         self.btn_next_step.setEnabled(False)  # Already at last step
-        
+
         # Update UI
         self.progressBar.setValue(100)
-        self.statusbar.showMessage('Registration complete! Fitness: {:.6f}, RMSE: {:.6f}'.format(
-            self.icp_result.fitness, self.icp_result.inlier_rmse))
-        
+        if self.icp_result is not None:
+            self.statusbar.showMessage('Registration complete! Fitness: {:.6f}, RMSE: {:.6f}'.format(
+                self.icp_result.fitness, self.icp_result.inlier_rmse))
+        else:
+            self.statusbar.showMessage('Registration complete!')
+
         # Re-enable the button
         self.toolButton.setEnabled(True)
     
     def _update_results_display(self):
         """Update the results labels with RANSAC and ICP statistics."""
-        # Update RANSAC results
-        self.label_ransac_fitness.setText(f"{self.ransac_result.fitness:.6f}")
-        self.label_ransac_rmse.setText(f"{self.ransac_result.inlier_rmse:.6f}")
-        
-        # Update ICP results
-        self.label_icp_fitness.setText(f"{self.icp_result.fitness:.6f}")
-        self.label_icp_rmse.setText(f"{self.icp_result.inlier_rmse:.6f}")
+        # Update RANSAC results if available
+        if hasattr(self, 'ransac_result') and self.ransac_result is not None:
+            self.label_ransac_fitness.setText(f"{self.ransac_result.fitness:.6f}")
+            self.label_ransac_rmse.setText(f"{self.ransac_result.inlier_rmse:.6f}")
+        else:
+            self.label_ransac_fitness.setText("--")
+            self.label_ransac_rmse.setText("--")
+
+        # Update ICP results if available
+        if hasattr(self, 'icp_result') and self.icp_result is not None:
+            self.label_icp_fitness.setText(f"{self.icp_result.fitness:.6f}")
+            self.label_icp_rmse.setText(f"{self.icp_result.inlier_rmse:.6f}")
+        else:
+            self.label_icp_fitness.setText("--")
+            self.label_icp_rmse.setText("--")
     
     def _on_registration_error(self, error_msg):
         """Called if an error occurs during registration."""
         self.statusbar.showMessage(f'Error during registration: {error_msg}')
         self.toolButton.setEnabled(True)
+
+    def _on_registration_step(self, stage, iteration, data):
+        """Handle a single iteration emitted by the worker thread.
+
+        ``stage`` is 0 (raw clouds), 1 (ransac) or 2 (icp).  ``iteration`` is the
+        cumulative count within that stage.  ``data`` contains the object(s)
+        produced at that iteration.
+        """
+        # append to history and update pointers
+        self.step_history.append((stage, iteration, data))
+        self.current_step = len(self.step_history) - 1
+
+        # if raw clouds arrived, store them for future transforms
+        if stage == 0:
+            self.pcd1 = data.get("pcd1")
+            self.pcd2 = data.get("pcd2")
+        elif stage == 1:
+            self.ransac_result = data.get("ransac")
+        elif stage == 2:
+            self.icp_result = data.get("icp")
+
+        # update display based on the new last entry
+        self._display_registration_results()
+        # update results table if ransac/icp information present
+        if 'ransac' in data or 'icp' in data:
+            self._update_results_display()
+
+        # update progress bar and status message based on totals
+        total = data.get('total', 1)
+        if stage == 0:
+            self.progressBar.setValue(0)
+            self.statusbar.showMessage("Loaded point clouds")
+            overlay = ""
+        elif stage == 1:
+            # show percent of RANSAC
+            pct = int(iteration / total * 100) if total else 0
+            self.progressBar.setValue(pct)
+            self.statusbar.showMessage(f"RANSAC {iteration}/{total}")
+            overlay = f"RANSAC {iteration}/{total}"
+        elif stage == 2:
+            pct = int(iteration / total * 100) if total else 0
+            self.progressBar.setValue(pct)
+            self.statusbar.showMessage(f"ICP {iteration}/{total}")
+            overlay = f"ICP {iteration}/{total}"
+        # set overlay text on the OpenGL widget if it supports it
+        try:
+            self.openGLWidget.set_overlay_text(overlay)
+        except AttributeError:
+            pass
+
+        # navigation buttons
+        self.btn_prev_step.setEnabled(self.current_step > 0)
+        self.btn_next_step.setEnabled(self.current_step < len(self.step_history) - 1)
     
     def _display_registration_results(self):
         """Display the registration results in the OpenGL viewer based on current step."""
@@ -170,24 +247,34 @@ class AppTest(QMainWindow, Ui_MainWindow):
         
         # Prepare point clouds with colors
         import copy
+        # Determine which transformation to use based on history entry
+        if self.step_history:
+            stage, iteration, payload = self.step_history[self.current_step]
+        else:
+            stage, iteration, payload = 0, 0, {}
+
         source_temp = copy.deepcopy(self.pcd1)
         target_temp = copy.deepcopy(self.pcd2)
-        
+
         source_temp.paint_uniform_color([1.0, 0.706, 0.0])  # Orange
         target_temp.paint_uniform_color([0.0, 0.651, 0.929])  # Blue
-        
-        # Apply transformation based on current step
-        if self.current_step == 0:
-            # Step 0: Original offset point clouds (no transformation)
-            self.label_step_info.setText("Step 1/3: Original Point Clouds")
-        elif self.current_step == 1:
-            # Step 1: RANSAC alignment
-            source_temp.transform(self.ransac_result.transformation)
-            self.label_step_info.setText("Step 2/3: RANSAC Alignment")
-        elif self.current_step == 2:
-            # Step 2: Final ICP alignment
-            source_temp.transform(self.icp_result.transformation)
-            self.label_step_info.setText("Step 3/3: ICP Refinement")
+
+        # Apply transformation based on the stage
+        if stage == 0:
+            self.label_step_info.setText("Raw point clouds")
+        elif stage == 1:
+            # RANSAC iteration: transformation is in payload['ransac']
+            trans = payload.get('ransac').transformation if payload.get('ransac') else None
+            if trans is not None:
+                source_temp.transform(trans)
+            total = payload.get('total', '?')
+            self.label_step_info.setText(f"RANSAC {iteration}/{total}")
+        elif stage == 2:
+            trans = payload.get('icp').transformation if payload.get('icp') else None
+            if trans is not None:
+                source_temp.transform(trans)
+            total = payload.get('total', '?')
+            self.label_step_info.setText(f"ICP {iteration}/{total}")
         
         # Add to the viewer
         self.openGLWidget.add_point_cloud("Source", source_temp)
@@ -199,7 +286,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         if self.current_step > 0:
             self.current_step -= 1
             self._display_registration_results()
-            
+
             # Update button states
             self.btn_next_step.setEnabled(True)
             if self.current_step == 0:
@@ -207,13 +294,13 @@ class AppTest(QMainWindow, Ui_MainWindow):
     
     def _next_step(self):
         """Navigate to the next registration step."""
-        if self.current_step < 2:
+        if self.current_step < len(self.step_history) - 1:
             self.current_step += 1
             self._display_registration_results()
-            
+
             # Update button states
             self.btn_prev_step.setEnabled(True)
-            if self.current_step == 2:
+            if self.current_step == len(self.step_history) - 1:
                 self.btn_next_step.setEnabled(False)
 
     def save_df(self):

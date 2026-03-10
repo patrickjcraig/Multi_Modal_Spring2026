@@ -19,12 +19,17 @@ class PointCloudWidget(QOpenGLWidget):
     """
     OpenGL widget for rendering point clouds from open3d.
     Supports multiple point clouds with different colors and transformations.
+
+    The widget can optionally display overlay text (e.g. "RANSAC 5/100")
+    in the top‑left corner; the text is set with :meth:`set_overlay_text`.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.point_clouds = {}  # Dictionary to store point cloud data {name: {vertices, colors, VAO, VBO}}
         self.shader_id = None
+        # overlay text rendered with QPainter after OpenGL draw
+        self._overlay_text = ""
         
         # Camera parameters
         self.camera_distance = 300.0
@@ -215,6 +220,15 @@ void main() {
                 
                 gl.glBindVertexArray(data['vao'])
                 gl.glDrawArrays(gl.GL_POINTS, 0, data['vertex_count'])
+        # after rendering all clouds, draw overlay text if present
+        from PySide6.QtGui import QPainter, QColor, QFont
+        painter = QPainter(self)
+        painter.setPen(QColor(255, 255, 255))
+        font = QFont()
+        font.setPointSize(12)
+        painter.setFont(font)
+        painter.drawText(10, 20, self._overlay_text)
+        painter.end()
 
     def resizeGL(self, w, h):
         """Handle window resize."""
@@ -245,6 +259,16 @@ void main() {
         
         self.last_mouse_x = current_x
         self.last_mouse_y = current_y
+        self.update()
+
+
+    def set_overlay_text(self, text: str):
+        """Set the overlay string shown in the upper left of the widget.
+
+        The text is rendered after all point clouds have been drawn in
+        :meth:`paintGL` so that it remains unobscured by the 3D scene.
+        """
+        self._overlay_text = text
         self.update()
 
     def wheelEvent(self, event):
