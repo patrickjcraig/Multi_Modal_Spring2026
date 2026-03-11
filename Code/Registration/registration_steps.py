@@ -96,20 +96,26 @@ def iterative_icp(
     # open3d_ICP lives at workspace root/Code/open3d_ICP.py
     from open3d_ICP import run_ICP
 
-    current = initial_transformation
+    # make sure we use a valid 4x4 matrix as the starting guess
+    if initial_transformation is None:
+        import numpy as _np
+        starting = _np.eye(4)
+    else:
+        starting = initial_transformation
+
     best = None
+    # iterate with an increasing total-iteration criterion so that each
+    # callback corresponds to the result after ``it`` total ICP iterations.
     for it in range(step, max_iterations + 1, step):
-        crit = o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=step)
-        # we temporarily wrap run_ICP to accept custom criteria
+        crit = o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=it)
         result = o3d.pipelines.registration.registration_icp(
             pcd1,
             pcd2,
             voxel_size * icp_dist_multiplier,
-            current,
+            starting,
             o3d.pipelines.registration.TransformationEstimationPointToPoint(),
             criteria=crit,
         )
-        current = result.transformation
         best = result
         if callback is not None:
             callback(it, result)
