@@ -8,7 +8,6 @@ from Widgets.pointcloud_widget import PointCloudWidget
 from GUI.icp_worker import ICPWorkerThread
 from Utils.dataframe_utils import pcd_to_df, tf_to_df, reg_to_df
 from GUI.workspace_controller import WorkspaceController
-from PySide6.QtWidgets import QDialog
 from GUI.dialogs.xray_import_dialog import XRayImportDialog
 from makeGeometry import get_pcd_from_ct_stack
 
@@ -373,7 +372,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
 
             # Call the main function logic in the module
             pcd, mesh, level = get_pcd_from_ct_stack(
-                folder_path=demo_folder,    # None will trigger the default in your function
+                folder_path=demo_folder,
                 downsample_zyx=4,
                 crop_zyx=(256, 256, 256),
                 level=None,
@@ -414,74 +413,74 @@ class AppTest(QMainWindow, Ui_MainWindow):
             QMessageBox.critical(self, "Error", str(e))
             self.statusbar.showMessage("Error generating demo CT point cloud.")
 
-
     # X-ray import dialog and loading functions
     def open_xray_dialog(self):
         dialog = XRayImportDialog(self)
 
         if dialog.exec():
             params = dialog.get_import_params()
-
-            if params.import_type == "tiff stack folder":
-                self.load_tiff_stack(params.path)
-
-            elif params.import_type == "h5":
-                print("H5 import skeleton")
-
-            elif params.import_type == "npy":
-                print("NPY import skeleton")
-
+            self.import_xray_data(params)
 
     def import_xray_data(self, params):
-        import_type = params.import_type
-        path = params.path
+        if params.import_type == "tiff stack folder":
+            self.load_tiff_stack(
+                folder_path=params.path,
+                voxel_size_mm=params.voxel_size_mm,
+                roi_xyz=params.roi_xyz,
+                downsampling=params.downsampling,
+                pcd_points=params.pcd_points,
+            )
 
-        if import_type == "tiff stack folder":
-            self.load_tiff_stack(path)
+        elif params.import_type == "h5":
+            self.load_h5(params.path)
 
-        elif import_type == "h5":
-            self.statusbar.showMessage("H5 import not implemented yet.")
-            print(f"[TODO] H5 import skeleton: {path}")
-
-        elif import_type == "npy":
-            self.statusbar.showMessage("NPY import not implemented yet.")
-            print(f"[TODO] NPY import skeleton: {path}")
+        elif params.import_type == "npy":
+            self.load_npy(params.path)
 
         else:
-            self.statusbar.showMessage(f"Unknown import type: {import_type}")
-   
+            self.statusbar.showMessage(f"Unknown import type: {params.import_type}")
+
     def load_h5(self, file_path):
         self.statusbar.showMessage("H5 import not implemented yet.")
         print(f"[TODO] load_h5: {file_path}")
-
 
     def load_npy(self, file_path):
         self.statusbar.showMessage("NPY import not implemented yet.")
         print(f"[TODO] load_npy: {file_path}")
 
-    def load_tiff_stack(self, folder_path):
-        """
-        Load a TIFF stack from a folder and convert it to a point cloud.
-        """
-
+    def load_tiff_stack(self, folder_path, voxel_size_mm, roi_xyz, downsampling, pcd_points):
         try:
             self.statusbar.showMessage("Loading TIFF stack...")
 
+            # Dialog ROI is entered as (X, Y, Z)
+            # Convert only if your backend expects (Z, Y, X)
+            crop_zyx = (roi_xyz[2], roi_xyz[1], roi_xyz[0])
+
             pcd, mesh, level = get_pcd_from_ct_stack(
                 folder_path=folder_path,
-                downsample_zyx=4,
-                crop_zyx=(1024, 1024, 1024), 
+                downsample_zyx=downsampling,   # <- pass single int, not tuple
+                crop_zyx=crop_zyx,
                 level=None,
-                n_points=5000
+                n_points=pcd_points,
             )
 
+            print("Imported TIFF stack from:", folder_path)
+            print("Voxel size (mm):", voxel_size_mm)
+            print("ROI XYZ:", roi_xyz)
+            print("Crop ZYX:", crop_zyx)
+            print("Downsampling:", downsampling)
+            print("Point count:", pcd_points)
             print("MC level:", level)
 
-            # reset current scene
             self.scan_reset()
 
             self.pcd1 = pcd
             self.mesh1 = mesh
+            self.voxel_size_mm = voxel_size_mm
+            self.import_path = folder_path
+            self.import_roi_xyz = roi_xyz
+            self.import_downsampling = downsampling
+            self.import_pcd_points = pcd_points
 
             geometry = self.openGLWidget.geometry()
             parent = self.openGLWidget.parent()
