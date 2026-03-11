@@ -7,11 +7,6 @@ outcome; here we re-run the algorithm in small increments and invoke a
 callback for every step.  The GUI code can then animate the transformation
 as the algorithm progresses.
 
-Note that these implementations are *not* intended for production use; they
-are slow since they repeat some work for each callback.  For exploratory
-visualization on test meshes (e.g. ``TestPart.stl``) the overhead is
-acceptable.
-
 """
 
 import open3d as o3d
@@ -108,7 +103,7 @@ def iterative_icp(
         The final ICP result.
     """
     # open3d_ICP lives at workspace root/Code/open3d_ICP.py
-    from open3d_ICP import run_ICP
+    #from open3d_ICP import run_ICP # we don't use the original run_ICP since it only shows the final result, custom implementation here for iterations
 
     # make sure we use a valid 4x4 matrix as the starting guess
     if initial_transformation is None:
@@ -130,7 +125,7 @@ def iterative_icp(
             o3d.pipelines.registration.TransformationEstimationPointToPoint(),
             criteria=crit,
         )
-        best = result
+        best = result # no comparison needed since ICP should be sequentially improving
         if callback is not None:
             callback(it, result)
     return best
