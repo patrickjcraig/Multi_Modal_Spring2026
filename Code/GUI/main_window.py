@@ -455,7 +455,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
             pcd, mesh, level = get_pcd_from_ct_stack(
                 folder_path=folder_path,
                 downsample_zyx=4,
-                crop_zyx=(256,256,256),
+                crop_zyx=(1024, 1024, 1024), 
                 level=None,
                 n_points=5000
             )

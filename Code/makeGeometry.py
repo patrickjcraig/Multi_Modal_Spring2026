@@ -144,8 +144,8 @@ if __name__ == "__main__":
 
     pcd, mesh, level = get_pcd_from_ct_stack(
         folder_path=folder,
-        downsample_zyx=1,
-        crop_zyx=(256, 256, 256),
+        downsample_zyx=4,
+        crop_zyx=(2943, 2304, 2943), 
         level=None,
         n_points=50_000,
     )
