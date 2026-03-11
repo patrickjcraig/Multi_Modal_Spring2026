@@ -50,6 +50,7 @@ def iterative_ransac(
     from open3d_ICP import run_RANSAC
 
     best = None
+    # iterate in increments, keeping track of the best result seen so far
     for it in range(step, max_iterations + 1, step):
         res = run_RANSAC(
             pcd1_down,
@@ -61,7 +62,20 @@ def iterative_ransac(
             it,
             validation_iterations,
         )
-        best = res
+        # if we haven't recorded a result yet, or this one is better, update
+        if best is None:
+            best = res
+        else:
+            # choose the result with higher fitness (more inliers)
+            try:
+                if res.fitness > best.fitness: # first check fitness
+                    best = res
+                elif res.fitness == best.fitness and res.inlier_rmse < best.inlier_rmse: # if fitness is equal, check RMSE
+                    best = res
+            except AttributeError:
+                # fallback to using inlier_rmse if fitness is unavailable
+                if getattr(res, "inlier_rmse", float("inf")) < getattr(best, "inlier_rmse", float("inf")):
+                    best = res
         if callback is not None:
             callback(it, res)
     return best
