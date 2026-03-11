@@ -122,8 +122,12 @@ class AppTest(QMainWindow, Ui_MainWindow):
         # in case steps didn't populate all attributes, make sure we have them
         self.pcd1 = results.get('pcd1', getattr(self, 'pcd1', None))
         self.pcd2 = results.get('pcd2', getattr(self, 'pcd2', None))
-        self.ransac_result = results.get('ransac', getattr(self, 'ransac_result', None))
-        self.icp_result = results.get('icp', getattr(self, 'icp_result', None))
+        # only overwrite ransac/icp results if the thread returned something
+        # meaningful; the step callback already updates these during the run.
+        if results.get('ransac') is not None:
+            self.ransac_result = results['ransac']
+        if results.get('icp') is not None:
+            self.icp_result = results['icp']
 
         # Update the results labels
         self._update_results_display()
@@ -311,10 +315,21 @@ class AppTest(QMainWindow, Ui_MainWindow):
         # saving pcd1, pcd2, ICP and RANSAC results into separate Pandas dfs
         pcd1_df = pcd_to_df(self.pcd1)
         pcd2_df = pcd_to_df(self.pcd2)
-        icp_tf_df = tf_to_df(self.icp_result) # transformation matrix of ICP registration
-        icp_df = reg_to_df(self.icp_result) # metadata of ICP registration
-        ransac_tf_df = tf_to_df(self.ransac_result) # transformation matrix of RANSAC
-        ransac_df = reg_to_df(self.ransac_result) # metadata of RANSAC
+        # if results are missing (e.g. registration aborted) create empty dfs
+        if getattr(self, 'icp_result', None) is not None:
+            icp_tf_df = tf_to_df(self.icp_result) # transformation matrix of ICP registration
+            icp_df = reg_to_df(self.icp_result) # metadata of ICP registration
+        else:
+            import pandas as _pd
+            icp_tf_df = _pd.DataFrame()
+            icp_df = _pd.DataFrame()
+        if getattr(self, 'ransac_result', None) is not None:
+            ransac_tf_df = tf_to_df(self.ransac_result) # transformation matrix of RANSAC
+            ransac_df = reg_to_df(self.ransac_result) # metadata of RANSAC
+        else:
+            import pandas as _pd
+            ransac_tf_df = _pd.DataFrame()
+            ransac_df = _pd.DataFrame()
 
         code_dir = os.path.dirname(os.path.abspath(__file__)) # finding directory for this file
         ws_dir = os.path.dirname(code_dir) # go into Multi_Modal_Spring2026 folder
