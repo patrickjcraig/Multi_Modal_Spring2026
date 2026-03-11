@@ -446,7 +446,7 @@
    <widget class="QLabel" name="label_step_info">
     <property name="geometry">
      <rect>
-      <x>390</x>
+      <x>400</x>
       <y>540</y>
       <width>239</width>
       <height>33</height>
@@ -473,7 +473,7 @@
       <x>22</x>
       <y>570</y>
       <width>362</width>
-      <height>26</height>
+      <height>31</height>
      </rect>
     </property>
     <property name="text">
@@ -489,7 +489,7 @@
       <x>390</x>
       <y>570</y>
       <width>361</width>
-      <height>21</height>
+      <height>31</height>
      </rect>
     </property>
     <property name="text">
