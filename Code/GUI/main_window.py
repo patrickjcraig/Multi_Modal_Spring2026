@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from uuid import uuid4
 
-from PySide6.QtWidgets import QMainWindow, QTabWidget
+from PySide6.QtWidgets import QMainWindow
 from ui_mainwindow import Ui_MainWindow
 from GUI.workspace_controller import WorkspaceController
 from GUI.scan_viewer_tab import ScanViewerTab
@@ -40,11 +40,12 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.registration = RegistrationController(self)
         self.importer = ImportController(self)
 
-        # Replace the placeholder OpenGL widget with a tabbed scan workspace.
-        self._setup_scan_tabs()
+        # The tab widget now lives in the .ui file; clear the placeholder page.
+        self.scanTabs.clear()
+        self.scanTabs.setTabsClosable(True)
+        self.scanTabs.setMovable(True)
 
         self.setup_connections() # wire signals to the controllers above
-        self._configure_action_buttons()
         self._sync_selection_ui()
 
         # old code from using QUiLoader, switching to using pyside6-uic since this makes the widgets work 
@@ -61,21 +62,6 @@ class AppTest(QMainWindow, Ui_MainWindow):
         #ui_file.close()
 
         #self.setCentralWidget(self.ui)
-
-    def _setup_scan_tabs(self):
-        """Replace the placeholder OpenGL widget with a tabbed viewer area."""
-        geometry = self.openGLWidget.geometry()
-        parent = self.openGLWidget.parent()
-
-        self.openGLWidget.setParent(None)
-        self.openGLWidget.deleteLater()
-
-        self.scanTabs = QTabWidget(parent)
-        self.scanTabs.setObjectName("scanTabs")
-        self.scanTabs.setGeometry(geometry)
-        self.scanTabs.setTabsClosable(True)
-        self.scanTabs.setMovable(True)
-        self.scanTabs.show()
 
     def setup_connections(self):
         # wire widget signals to the helper controllers rather than implementing
@@ -96,11 +82,6 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.toolButton_5.clicked.connect(self.mark_current_as_target)
         self.scanTabs.currentChanged.connect(self._on_tab_changed)
         self.scanTabs.tabCloseRequested.connect(self.remove_scan_tab)
-
-    def _configure_action_buttons(self):
-        self.toolButton_4.setText("Set Current As Source")
-        self.toolButton_5.setText("Set Current As Target")
-        self.label.setText("Scans Workspace")
 
     def _on_tab_changed(self, _index):
         self._sync_selection_ui()

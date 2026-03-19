@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'UI_V1.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.10.2
+## Created by: Qt User Interface Compiler version 6.7.1
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -16,12 +16,11 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QIcon, QImage, QKeySequence, QLinearGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
-from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import (QApplication, QDoubleSpinBox, QFrame, QHBoxLayout,
     QLabel, QMainWindow, QMenu, QMenuBar,
     QProgressBar, QPushButton, QSizePolicy, QSpacerItem,
-    QSpinBox, QStatusBar, QToolButton, QVBoxLayout,
-    QWidget)
+    QSpinBox, QStatusBar, QTabWidget, QToolButton,
+    QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -44,9 +43,12 @@ class Ui_MainWindow(object):
         self.progressBar.setObjectName(u"progressBar")
         self.progressBar.setGeometry(QRect(22, 540, 381, 23))
         self.progressBar.setValue(0)
-        self.openGLWidget = QOpenGLWidget(self.centralwidget)
-        self.openGLWidget.setObjectName(u"openGLWidget")
-        self.openGLWidget.setGeometry(QRect(20, 50, 781, 481))
+        self.scanTabs = QTabWidget(self.centralwidget)
+        self.scanTabs.setObjectName(u"scanTabs")
+        self.scanTabs.setGeometry(QRect(20, 50, 781, 481))
+        self.tab_workspace_placeholder = QWidget()
+        self.tab_workspace_placeholder.setObjectName(u"tab_workspace_placeholder")
+        self.scanTabs.addTab(self.tab_workspace_placeholder, "")
         self.horizontalLayoutWidget_2 = QWidget(self.centralwidget)
         self.horizontalLayoutWidget_2.setObjectName(u"horizontalLayoutWidget_2")
         self.horizontalLayoutWidget_2.setGeometry(QRect(20, 540, 361, 31))
@@ -328,6 +330,9 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
+        self.scanTabs.setCurrentIndex(0)
+
+
         QMetaObject.connectSlotsByName(MainWindow)
     # setupUi
 
@@ -338,12 +343,13 @@ class Ui_MainWindow(object):
         self.actionX_Ray.setText(QCoreApplication.translate("MainWindow", u"X-Ray", None))
         self.actionPoint_Cloud.setText(QCoreApplication.translate("MainWindow", u"Point Cloud", None))
         self.actionImport_XRay.setText(QCoreApplication.translate("MainWindow", u"X-Ray", None))
-        self.label.setText(QCoreApplication.translate("MainWindow", u"OpenGL Window", None))
+        self.scanTabs.setTabText(self.scanTabs.indexOf(self.tab_workspace_placeholder), QCoreApplication.translate("MainWindow", u"Workspace", None))
+        self.label.setText(QCoreApplication.translate("MainWindow", u"Scans Workspace", None))
         self.toolButton.setText(QCoreApplication.translate("MainWindow", u"Run RANSAC+ICP", None))
         self.toolButton_3.setText(QCoreApplication.translate("MainWindow", u"Registration (Sample Point Cloud)", None))
         self.toolButton_2.setText(QCoreApplication.translate("MainWindow", u"Save Data", None))
-        self.toolButton_4.setText(QCoreApplication.translate("MainWindow", u"Icon 4", None))
-        self.toolButton_5.setText(QCoreApplication.translate("MainWindow", u"Icon 5", None))
+        self.toolButton_4.setText(QCoreApplication.translate("MainWindow", u"Set Current As Source", None))
+        self.toolButton_5.setText(QCoreApplication.translate("MainWindow", u"Set Current As Target", None))
         self.label_params_title.setText(QCoreApplication.translate("MainWindow", u"Registration Parameters", None))
         self.label_voxel_size.setText(QCoreApplication.translate("MainWindow", u"Voxel Size (Downsampling):", None))
         self.label_ransac_title.setText(QCoreApplication.translate("MainWindow", u"RANSAC Parameters", None))
