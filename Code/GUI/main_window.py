@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from uuid import uuid4
 
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMainWindow
 from ui_mainwindow import Ui_MainWindow
 from GUI.workspace_controller import WorkspaceController
@@ -44,6 +45,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.scanTabs.clear()
         self.scanTabs.setTabsClosable(True)
         self.scanTabs.setMovable(True)
+        self._fit_to_screen()
 
         self.setup_connections() # wire signals to the controllers above
         self._sync_selection_ui()
@@ -62,6 +64,12 @@ class AppTest(QMainWindow, Ui_MainWindow):
         #ui_file.close()
 
         #self.setCentralWidget(self.ui)
+
+    def _fit_to_screen(self):
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        self.setGeometry(screen.availableGeometry())
 
     def setup_connections(self):
         # wire widget signals to the helper controllers rather than implementing

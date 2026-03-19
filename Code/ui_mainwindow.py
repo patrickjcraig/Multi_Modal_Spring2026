@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'UI_V1.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.7.1
+## Created by: Qt User Interface Compiler version 6.10.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -26,7 +26,7 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(1084, 889)
+        MainWindow.resize(1600, 980)
         self.actionSave_Workspace = QAction(MainWindow)
         self.actionSave_Workspace.setObjectName(u"actionSave_Workspace")
         self.actionLoad_Workspace = QAction(MainWindow)
@@ -41,26 +41,23 @@ class Ui_MainWindow(object):
         self.centralwidget.setObjectName(u"centralwidget")
         self.progressBar = QProgressBar(self.centralwidget)
         self.progressBar.setObjectName(u"progressBar")
-        self.progressBar.setGeometry(QRect(22, 540, 381, 23))
+        self.progressBar.setGeometry(QRect(22, 730, 520, 23))
         self.progressBar.setValue(0)
         self.scanTabs = QTabWidget(self.centralwidget)
         self.scanTabs.setObjectName(u"scanTabs")
-        self.scanTabs.setGeometry(QRect(20, 50, 781, 481))
+        self.scanTabs.setGeometry(QRect(20, 30, 1220, 690))
         self.tab_workspace_placeholder = QWidget()
         self.tab_workspace_placeholder.setObjectName(u"tab_workspace_placeholder")
         self.scanTabs.addTab(self.tab_workspace_placeholder, "")
         self.horizontalLayoutWidget_2 = QWidget(self.centralwidget)
         self.horizontalLayoutWidget_2.setObjectName(u"horizontalLayoutWidget_2")
-        self.horizontalLayoutWidget_2.setGeometry(QRect(20, 540, 361, 31))
+        self.horizontalLayoutWidget_2.setGeometry(QRect(20, 760, 520, 31))
         self.horizontalLayout_2 = QHBoxLayout(self.horizontalLayoutWidget_2)
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
         self.horizontalLayout_2.setContentsMargins(0, 0, 0, 0)
-        self.label = QLabel(self.centralwidget)
-        self.label.setObjectName(u"label")
-        self.label.setGeometry(QRect(10, 30, 121, 18))
         self.horizontalLayoutWidget = QWidget(self.centralwidget)
         self.horizontalLayoutWidget.setObjectName(u"horizontalLayoutWidget")
-        self.horizontalLayoutWidget.setGeometry(QRect(0, 0, 626, 27))
+        self.horizontalLayoutWidget.setGeometry(QRect(0, 0, 930, 27))
         self.horizontalLayout = QHBoxLayout(self.horizontalLayoutWidget)
         self.horizontalLayout.setObjectName(u"horizontalLayout")
         self.horizontalLayout.setContentsMargins(0, 0, 0, 0)
@@ -92,7 +89,7 @@ class Ui_MainWindow(object):
 
         self.verticalLayoutWidget = QWidget(self.centralwidget)
         self.verticalLayoutWidget.setObjectName(u"verticalLayoutWidget")
-        self.verticalLayoutWidget.setGeometry(QRect(830, 40, 231, 669))
+        self.verticalLayoutWidget.setGeometry(QRect(1250, 40, 290, 820))
         self.verticalLayout = QVBoxLayout(self.verticalLayoutWidget)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
@@ -292,21 +289,21 @@ class Ui_MainWindow(object):
 
         self.label_step_info = QLabel(self.centralwidget)
         self.label_step_info.setObjectName(u"label_step_info")
-        self.label_step_info.setGeometry(QRect(400, 540, 239, 33))
+        self.label_step_info.setGeometry(QRect(780, 720, 239, 33))
         self.label_step_info.setFont(font1)
         self.label_step_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.btn_prev_step = QPushButton(self.centralwidget)
         self.btn_prev_step.setObjectName(u"btn_prev_step")
         self.btn_prev_step.setEnabled(False)
-        self.btn_prev_step.setGeometry(QRect(22, 570, 362, 31))
+        self.btn_prev_step.setGeometry(QRect(550, 760, 341, 31))
         self.btn_next_step = QPushButton(self.centralwidget)
         self.btn_next_step.setObjectName(u"btn_next_step")
         self.btn_next_step.setEnabled(False)
-        self.btn_next_step.setGeometry(QRect(390, 570, 361, 31))
+        self.btn_next_step.setGeometry(QRect(890, 760, 341, 31))
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
-        self.menubar.setGeometry(QRect(0, 0, 1084, 23))
+        self.menubar.setGeometry(QRect(0, 0, 1600, 33))
         self.menuFiles = QMenu(self.menubar)
         self.menuFiles.setObjectName(u"menuFiles")
         self.menuImport_2 = QMenu(self.menuFiles)
@@ -344,7 +341,6 @@ class Ui_MainWindow(object):
         self.actionPoint_Cloud.setText(QCoreApplication.translate("MainWindow", u"Point Cloud", None))
         self.actionImport_XRay.setText(QCoreApplication.translate("MainWindow", u"X-Ray", None))
         self.scanTabs.setTabText(self.scanTabs.indexOf(self.tab_workspace_placeholder), QCoreApplication.translate("MainWindow", u"Workspace", None))
-        self.label.setText(QCoreApplication.translate("MainWindow", u"Scans Workspace", None))
         self.toolButton.setText(QCoreApplication.translate("MainWindow", u"Run RANSAC+ICP", None))
         self.toolButton_3.setText(QCoreApplication.translate("MainWindow", u"Registration (Sample Point Cloud)", None))
         self.toolButton_2.setText(QCoreApplication.translate("MainWindow", u"Save Data", None))

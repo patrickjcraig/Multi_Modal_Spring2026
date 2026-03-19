@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1084</width>
-    <height>889</height>
+    <width>1600</width>
+    <height>980</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -18,8 +18,8 @@
     <property name="geometry">
      <rect>
       <x>22</x>
-      <y>540</y>
-      <width>381</width>
+      <y>730</y>
+      <width>520</width>
       <height>23</height>
      </rect>
     </property>
@@ -31,9 +31,9 @@
     <property name="geometry">
      <rect>
       <x>20</x>
-      <y>50</y>
-      <width>781</width>
-      <height>481</height>
+      <y>30</y>
+      <width>1220</width>
+      <height>690</height>
      </rect>
     </property>
     <property name="currentIndex">
@@ -49,32 +49,19 @@
     <property name="geometry">
      <rect>
       <x>20</x>
-      <y>540</y>
-      <width>361</width>
+      <y>760</y>
+      <width>520</width>
       <height>31</height>
      </rect>
     </property>
     <layout class="QHBoxLayout" name="horizontalLayout_2"/>
-   </widget>
-   <widget class="QLabel" name="label">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>30</y>
-      <width>121</width>
-      <height>18</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Scans Workspace</string>
-    </property>
    </widget>
    <widget class="QWidget" name="horizontalLayoutWidget">
     <property name="geometry">
      <rect>
       <x>0</x>
       <y>0</y>
-      <width>626</width>
+      <width>930</width>
       <height>27</height>
      </rect>
     </property>
@@ -104,7 +91,7 @@
       </widget>
      </item>
      <item>
-     <widget class="QToolButton" name="toolButton_4">
+      <widget class="QToolButton" name="toolButton_4">
        <property name="text">
         <string>Set Current As Source</string>
        </property>
@@ -122,10 +109,10 @@
    <widget class="QWidget" name="verticalLayoutWidget">
     <property name="geometry">
      <rect>
-      <x>830</x>
+      <x>1250</x>
       <y>40</y>
-      <width>231</width>
-      <height>669</height>
+      <width>290</width>
+      <height>820</height>
      </rect>
     </property>
     <layout class="QVBoxLayout" name="verticalLayout">
@@ -454,8 +441,8 @@
    <widget class="QLabel" name="label_step_info">
     <property name="geometry">
      <rect>
-      <x>400</x>
-      <y>540</y>
+      <x>780</x>
+      <y>720</y>
       <width>239</width>
       <height>33</height>
      </rect>
@@ -478,9 +465,9 @@
     </property>
     <property name="geometry">
      <rect>
-      <x>22</x>
-      <y>570</y>
-      <width>362</width>
+      <x>550</x>
+      <y>760</y>
+      <width>341</width>
       <height>31</height>
      </rect>
     </property>
@@ -494,9 +481,9 @@
     </property>
     <property name="geometry">
      <rect>
-      <x>390</x>
-      <y>570</y>
-      <width>361</width>
+      <x>890</x>
+      <y>760</y>
+      <width>341</width>
       <height>31</height>
      </rect>
     </property>
@@ -510,8 +497,8 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1084</width>
-     <height>23</height>
+     <width>1600</width>
+     <height>33</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFiles">
