@@ -34,5 +34,12 @@ Rendering
     -Open3D into OpenGL
     -
 
+
 --ct-folder "C:\Users\whisk\Downloads\Senior Design\Multi_Modal_Spring2026\120kv_FDK"
-python main.py --ct-folder "C:\Users\whisk\Downloads\Senior Design\Multi_Modal_Spring2026\120kv_FDK" --downsample 2 --roi-sx 2000 --roi-sy 2000 --roi-sz 2000  --mc-level 38000  --n-points 5000
+
+
+MARCHING CUBES >= 42_000 to actually see metal
+
+python main.py --ct-folder "C:\Users\whisk\Downloads\Senior Design\Multi_Modal_Spring2026\120kv_FDK" --downsample 3 --roi-sx 3000 --roi-sy 3000 --roi-sz 3000  --mc-level 42000  --n-points 4000
+
+python main.py --ct-folder "C:\Users\whisk\Downloads\Senior Design\Multi_Modal_Spring2026\120kv_FDK" --downsample 2 --roi-sx 2943 --roi-sy 2304 --roi-sz 2943  --mc-level 40000  --n-points 2000

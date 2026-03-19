@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'xray_dialog.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.10.2
+## Created by: Qt User Interface Compiler version 6.7.1
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -23,7 +23,7 @@ class Ui_XRayDialog(object):
     def setupUi(self, XRayDialog):
         if not XRayDialog.objectName():
             XRayDialog.setObjectName(u"XRayDialog")
-        XRayDialog.resize(403, 328)
+        XRayDialog.resize(420, 361)
         sizePolicy = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -35,7 +35,7 @@ class Ui_XRayDialog(object):
 "border-radius: 3px;")
         self.buttonBox = QDialogButtonBox(XRayDialog)
         self.buttonBox.setObjectName(u"buttonBox")
-        self.buttonBox.setGeometry(QRect(300, 280, 91, 41))
+        self.buttonBox.setGeometry(QRect(310, 310, 91, 41))
         self.buttonBox.setAutoFillBackground(False)
         self.buttonBox.setStyleSheet(u"background-color: #f0f0f0;\n"
 "padding: 3px;\n"
@@ -45,7 +45,7 @@ class Ui_XRayDialog(object):
         self.buttonBox.setCenterButtons(True)
         self.line_path = QLineEdit(XRayDialog)
         self.line_path.setObjectName(u"line_path")
-        self.line_path.setGeometry(QRect(140, 60, 181, 31))
+        self.line_path.setGeometry(QRect(140, 60, 211, 31))
         self.line_path.setAutoFillBackground(False)
         self.line_path.setStyleSheet(u"background-color: #f0f0f0;\n"
 "padding: 3px;\n"
@@ -55,14 +55,14 @@ class Ui_XRayDialog(object):
         self.combo_import_type.addItem("")
         self.combo_import_type.addItem("")
         self.combo_import_type.setObjectName(u"combo_import_type")
-        self.combo_import_type.setGeometry(QRect(140, 20, 221, 31))
-        self.combo_import_type.setAutoFillBackground(True)
+        self.combo_import_type.setGeometry(QRect(140, 20, 261, 31))
+        self.combo_import_type.setAutoFillBackground(False)
         self.combo_import_type.setStyleSheet(u"background-color: #f0f0f0;\n"
 "padding: 3px;\n"
 "border-radius: 3px;")
         self.btn_browse = QPushButton(XRayDialog)
         self.btn_browse.setObjectName(u"btn_browse")
-        self.btn_browse.setGeometry(QRect(330, 60, 31, 31))
+        self.btn_browse.setGeometry(QRect(370, 60, 31, 31))
         self.btn_browse.setStyleSheet(u"background-color: #f0f0f0;\n"
 "padding: 3px;\n"
 "border-radius: 3px;")
@@ -73,7 +73,7 @@ class Ui_XRayDialog(object):
 "padding: 3px;\n"
 "border-radius: 3px;")
         self.spin_roi_x.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self.spin_roi_x.setProperty(u"showGroupSeparator", False)
+        self.spin_roi_x.setProperty("showGroupSeparator", False)
         self.spin_roi_x.setMaximum(65535)
         self.spin_roi_x.setValue(512)
         self.spin_roi_y = QSpinBox(XRayDialog)
@@ -96,7 +96,7 @@ class Ui_XRayDialog(object):
         self.spin_roi_z.setValue(512)
         self.spin_downsampling = QSpinBox(XRayDialog)
         self.spin_downsampling.setObjectName(u"spin_downsampling")
-        self.spin_downsampling.setGeometry(QRect(140, 200, 81, 31))
+        self.spin_downsampling.setGeometry(QRect(140, 200, 141, 31))
         self.spin_downsampling.setStyleSheet(u"background-color: #f0f0f0;\n"
 "padding: 3px;\n"
 "border-radius: 3px;")
@@ -112,7 +112,7 @@ class Ui_XRayDialog(object):
         self.spin_pcd_pts.setValue(2500)
         self.line_voxel_size = QLineEdit(XRayDialog)
         self.line_voxel_size.setObjectName(u"line_voxel_size")
-        self.line_voxel_size.setGeometry(QRect(140, 120, 221, 31))
+        self.line_voxel_size.setGeometry(QRect(140, 120, 261, 31))
         self.line_voxel_size.setStyleSheet(u"background-color: #f0f0f0;\n"
 "padding: 3px;\n"
 "border-radius: 3px;")
@@ -160,6 +160,22 @@ class Ui_XRayDialog(object):
         self.label_point_cloud_points.setStyleSheet(u"background-color: #f0f0f0;\n"
 "padding: 3px;\n"
 "border-radius: 3px;")
+        self.label_marching_cubes = QLabel(XRayDialog)
+        self.label_marching_cubes.setObjectName(u"label_marching_cubes")
+        self.label_marching_cubes.setGeometry(QRect(20, 280, 111, 31))
+        self.label_marching_cubes.setAutoFillBackground(False)
+        self.label_marching_cubes.setStyleSheet(u"background-color: #f0f0f0;\n"
+"padding: 3px;\n"
+"border-radius: 3px;")
+        self.spin_marching_cubes = QSpinBox(XRayDialog)
+        self.spin_marching_cubes.setObjectName(u"spin_marching_cubes")
+        self.spin_marching_cubes.setGeometry(QRect(140, 280, 81, 31))
+        self.spin_marching_cubes.setStyleSheet(u"background-color: #f0f0f0;\n"
+"padding: 3px;\n"
+"border-radius: 3px;")
+        self.spin_marching_cubes.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.spin_marching_cubes.setMaximum(262143)
+        self.spin_marching_cubes.setValue(42000)
 
         self.retranslateUi(XRayDialog)
         self.buttonBox.accepted.connect(XRayDialog.accept)
@@ -183,8 +199,9 @@ class Ui_XRayDialog(object):
         self.label_import_type.setText(QCoreApplication.translate("XRayDialog", u"Import Type", None))
         self.label_file_folder.setText(QCoreApplication.translate("XRayDialog", u"File / Folder", None))
         self.label_voxel_size.setText(QCoreApplication.translate("XRayDialog", u"Voxel Size (mm)", None))
-        self.label_roi_xyz.setText(QCoreApplication.translate("XRayDialog", u"ROI", None))
+        self.label_roi_xyz.setText(QCoreApplication.translate("XRayDialog", u"ROI (X,Y,Z)", None))
         self.label_downsampling.setText(QCoreApplication.translate("XRayDialog", u"Downsampling", None))
         self.label_point_cloud_points.setText(QCoreApplication.translate("XRayDialog", u"Point Cloud Points", None))
+        self.label_marching_cubes.setText(QCoreApplication.translate("XRayDialog", u"Marching Cubes", None))
     # retranslateUi
 

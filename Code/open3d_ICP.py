@@ -89,6 +89,8 @@ def run_full_registration(
     ransac_validation=1000,
     icp_dist_multiplier=0.4,
     icp_max_iter=50,
+    source_pcd=None,
+    target_pcd=None,
     step_callback=None,
     ransac_step=1,
     icp_step=1,
@@ -112,7 +114,13 @@ def run_full_registration(
     # import here to avoid circular dependency
     from Registration import registration_steps
 
-    pcd1, pcd2, pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh = import_dataset(voxel_size)
+    if source_pcd is not None and target_pcd is not None:
+        pcd1 = copy.deepcopy(source_pcd)
+        pcd2 = copy.deepcopy(target_pcd)
+        pcd1_down, pcd1_fpfh = preprocess_point_cloud(pcd1, voxel_size)
+        pcd2_down, pcd2_fpfh = preprocess_point_cloud(pcd2, voxel_size)
+    else:
+        pcd1, pcd2, pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh = import_dataset(voxel_size)
 
     # stage 0: raw clouds
     if step_callback is not None:

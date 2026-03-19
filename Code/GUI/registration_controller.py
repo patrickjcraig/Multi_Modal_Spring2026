@@ -4,7 +4,6 @@ from PySide6.QtCore import QObject
 
 from GUI.icp_worker import ICPWorkerThread
 from Utils.dataframe_utils import pcd_to_df, tf_to_df, reg_to_df
-from Widgets.pointcloud_widget import PointCloudWidget
 
 
 class RegistrationController(QObject):
@@ -21,10 +20,16 @@ class RegistrationController(QObject):
         super().__init__()
         self.main = main_window
 
+        self.reset_state()
+
+    def reset_state(self):
         # state owned by the controller
         self.step_history = []
         self.current_step = 0
         self.icp_thread = None
+        self.result_scan_id = None
+        self.source_scan = None
+        self.target_scan = None
 
     # ------------------------------------------------------------------
     # Public methods hooked to UI signals
@@ -33,9 +38,25 @@ class RegistrationController(QObject):
     def run_scan(self):
         """Start a registration run using values from the UI."""
         mw = self.main
+        self.source_scan, self.target_scan = mw.get_registration_pair()
+
+        if self.source_scan is None or self.target_scan is None:
+            mw.statusbar.showMessage("Choose a source and target tab before running registration.")
+            return
+
+        if self.source_scan.scan_id == self.target_scan.scan_id:
+            mw.statusbar.showMessage("Source and target scans must be different tabs.")
+            return
+
+        if self.source_scan.pcd is None or self.target_scan.pcd is None:
+            mw.statusbar.showMessage("Both selected scans need point cloud data.")
+            return
+
         mw.toolButton.setEnabled(False)
         mw.progressBar.setValue(0)
-        mw.statusbar.showMessage('Currently running ICP registration...')
+        mw.statusbar.showMessage(
+            f"Currently running ICP registration: {self.source_scan.name} -> {self.target_scan.name}"
+        )
 
         # reset history and UI state
         self.step_history = []
@@ -55,12 +76,21 @@ class RegistrationController(QObject):
         ransac_validation = mw.spinBox_ransac_validation.value()
         icp_dist_mult = mw.spinBox_icp_dist.value()
 
+        self.result_scan_id = mw.add_scan_tab(
+            name=f"Registration {self.source_scan.name} -> {self.target_scan.name}",
+            modality="registration-result",
+            is_result=True,
+            metadata={"Source": self.source_scan.name, "Target": self.target_scan.name},
+        )
+
         self.icp_thread = ICPWorkerThread(
             voxel_size=voxel_size,
             ransac_dist_mult=ransac_dist_mult,
             ransac_max_iter=ransac_max_iter,
             ransac_validation=ransac_validation,
             icp_dist_mult=icp_dist_mult,
+            source_pcd=self.source_scan.pcd,
+            target_pcd=self.target_scan.pcd,
         )
         self.icp_thread.step.connect(self._on_registration_step)
         self.icp_thread.finished.connect(self._on_registration_complete)
@@ -214,27 +244,15 @@ class RegistrationController(QObject):
             mw.progressBar.setValue(pct)
             mw.statusbar.showMessage(f"ICP {iteration}/{total}")
             overlay = f"ICP {iteration}/{total}"
-        try:
-            mw.openGLWidget.set_overlay_text(overlay)
-        except AttributeError:
-            pass
+        record = mw.scans.get(self.result_scan_id)
+        if record is not None:
+            record.tab.viewer.set_overlay_text(overlay)
 
         mw.btn_prev_step.setEnabled(self.current_step > 0)
         mw.btn_next_step.setEnabled(self.current_step < len(self.step_history) - 1)
 
     def _display_registration_results(self):
         mw = self.main
-        if not isinstance(mw.openGLWidget, PointCloudWidget):
-            geometry = mw.openGLWidget.geometry()
-            parent = mw.openGLWidget.parent()
-            mw.openGLWidget.setParent(None)
-            mw.openGLWidget.deleteLater()
-            mw.openGLWidget = PointCloudWidget(parent)
-            mw.openGLWidget.setGeometry(geometry)
-            mw.openGLWidget.show()
-        else:
-            mw.openGLWidget.point_clouds.clear()
-
         source_temp = copy.deepcopy(self.pcd1)
         target_temp = copy.deepcopy(self.pcd2)
         source_temp.paint_uniform_color([1.0, 0.706, 0.0])
@@ -260,6 +278,17 @@ class RegistrationController(QObject):
             total = payload.get('total', '?')
             mw.label_step_info.setText(f"ICP {iteration}/{total}")
 
-        mw.openGLWidget.add_point_cloud("Source", source_temp)
-        mw.openGLWidget.add_point_cloud("Target", target_temp)
-        mw.openGLWidget.update()
+        info_text = " | ".join([
+            f"Registration result",
+            f"Source: {self.source_scan.name if self.source_scan else 'Unknown'}",
+            f"Target: {self.target_scan.name if self.target_scan else 'Unknown'}",
+            f"Stage: {mw.label_step_info.text()}",
+        ])
+        mw.update_scan_tab(
+            self.result_scan_id,
+            info_text=info_text,
+            point_clouds=[
+                ("Source", source_temp, None),
+                ("Target", target_temp, None),
+            ],
+        )

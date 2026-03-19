@@ -2,7 +2,6 @@ import os
 import numpy as np
 from PySide6.QtWidgets import QMessageBox
 from makeGeometry import get_pcd_from_ct_stack
-from Widgets.pointcloud_widget import PointCloudWidget
 from GUI.dialogs.xray_import_dialog import XRayImportDialog
 
 
@@ -19,18 +18,16 @@ class ImportController:
         self.main = main_window
 
     def scan_reset(self):
-        """Clear any stored point clouds / results and restore the OpenGL widget. """
+        """Clear registration state while keeping imported scan tabs intact."""
         mw = self.main
-        mw.pcd1 = None
-        mw.pcd2 = None
-        mw.ransac_result = None
-        mw.icp_result = None
-        mw.current_step = 0
-
-        mw._setup_opengl_widget()
-
+        mw.registration.reset_state()
         mw.btn_prev_step.setEnabled(False)
         mw.btn_next_step.setEnabled(False)
+        mw.progressBar.setValue(0)
+        mw.label_ransac_fitness.setText("--")
+        mw.label_ransac_rmse.setText("--")
+        mw.label_icp_fitness.setText("--")
+        mw.label_icp_rmse.setText("--")
 
     def ct_demo(self):
         """Generate and display a demo CT point cloud."""
@@ -52,23 +49,17 @@ class ImportController:
             print("MC level:", level)
             print("PCD points:", np.asarray(pcd.points).shape[0])
             print("Mesh verts:", np.asarray(mesh.vertices).shape[0])
-
-            # reset previous state & widget
-            self.scan_reset()
-            mw.pcd1 = pcd
-            mw.mesh1 = mesh
-
-            geometry = mw.openGLWidget.geometry()
-            parent = mw.openGLWidget.parent()
-            mw.openGLWidget.setParent(None)
-            mw.openGLWidget.deleteLater()
-
-            mw.openGLWidget = PointCloudWidget(parent)
-            mw.openGLWidget.setGeometry(geometry)
-            mw.openGLWidget.show()
-
-            mw.openGLWidget.add_point_cloud("Demo CT", pcd)
-            mw.openGLWidget.update()
+            scan_id = mw.add_scan_tab(
+                name=f"Demo CT {mw.scanTabs.count() + 1}",
+                pcd=pcd,
+                mesh=mesh,
+                modality="ct-demo",
+                path=demo_folder,
+                metadata={"Points": np.asarray(pcd.points).shape[0], "MC level": level},
+            )
+            if mw.source_scan_id is None:
+                mw.source_scan_id = scan_id
+                mw._sync_selection_ui()
 
             mw.statusbar.showMessage("Demo CT point cloud generated and displayed.")
 
@@ -96,6 +87,7 @@ class ImportController:
                 roi_xyz=params.roi_xyz,
                 downsampling=params.downsampling,
                 pcd_points=params.pcd_points,
+                level=params.level,
             )
 
         elif params.import_type == "h5":
@@ -117,7 +109,7 @@ class ImportController:
         mw.statusbar.showMessage("NPY import not implemented yet.")
         print(f"[TODO] load_npy: {file_path}")
 
-    def load_tiff_stack(self, folder_path, voxel_size_mm, roi_xyz, downsampling, pcd_points):
+    def load_tiff_stack(self, folder_path, voxel_size_mm, roi_xyz, downsampling, pcd_points, level=None):
         mw = self.main
         try:
             mw.statusbar.showMessage("Loading TIFF stack...")
@@ -128,7 +120,7 @@ class ImportController:
                 folder_path=folder_path,
                 downsample_zyx=downsampling,
                 crop_zyx=crop_zyx,
-                level=None,
+                level=level,
                 n_points=pcd_points,
             )
 
@@ -140,28 +132,26 @@ class ImportController:
             print("Point count:", pcd_points)
             print("MC level:", level)
 
-            self.scan_reset()
-
-            mw.pcd1 = pcd
-            mw.mesh1 = mesh
-            mw.voxel_size_mm = voxel_size_mm
-            mw.import_path = folder_path
-            mw.import_roi_xyz = roi_xyz
-            mw.import_downsampling = downsampling
-            mw.import_pcd_points = pcd_points
-
-            geometry = mw.openGLWidget.geometry()
-            parent = mw.openGLWidget.parent()
-
-            mw.openGLWidget.setParent(None)
-            mw.openGLWidget.deleteLater()
-
-            mw.openGLWidget = PointCloudWidget(parent)
-            mw.openGLWidget.setGeometry(geometry)
-            mw.openGLWidget.show()
-
-            mw.openGLWidget.add_point_cloud("Imported CT", pcd)
-            mw.openGLWidget.update()
+            scan_id = mw.add_scan_tab(
+                name=f"Imported CT {mw.scanTabs.count() + 1}",
+                pcd=pcd,
+                mesh=mesh,
+                modality="xray-tiff-stack",
+                path=folder_path,
+                voxel_size_mm=voxel_size_mm,
+                metadata={
+                    "Voxel (mm)": voxel_size_mm,
+                    "ROI XYZ": roi_xyz,
+                    "Downsampling": downsampling,
+                    "Points": pcd_points,
+                    "MC level": level,
+                },
+            )
+            if mw.source_scan_id is None:
+                mw.source_scan_id = scan_id
+            elif mw.target_scan_id is None:
+                mw.target_scan_id = scan_id
+            mw._sync_selection_ui()
 
             mw.statusbar.showMessage("TIFF stack imported successfully.")
 

@@ -45,7 +45,7 @@ class WorkspaceController:
             "icp_dist": self.main.spinBox_icp_dist.value(),
 
             # Application state
-            "current_step": self.main.current_step,
+            "current_step": self.main.registration.current_step,
         }
 
         try:
@@ -77,7 +77,7 @@ class WorkspaceController:
             workspace_data = load_workspace(filepath)
 
             # Reset scan (this will NOT save due to pickling limitations)
-            self.main.scan_reset()
+            self.main.importer.scan_reset()
 
             # Restore UI parameters
             self.main.spinBox_voxel_size.setValue(workspace_data["voxel_size"])
@@ -87,11 +87,11 @@ class WorkspaceController:
             self.main.spinBox_icp_dist.setValue(workspace_data["icp_dist"])
 
             # Restore application state
-            self.main.current_step = workspace_data["current_step"]
+            self.main.registration.current_step = workspace_data["current_step"]
 
             # Update UI elements accordingly
-            self.main.btn_prev_step.setEnabled(self.main.current_step > 0)
-            self.main.btn_next_step.setEnabled(self.main.current_step < 2)
+            self.main.btn_prev_step.setEnabled(self.main.registration.current_step > 0)
+            self.main.btn_next_step.setEnabled(self.main.registration.current_step < 2)
 
             self.main.statusbar.showMessage("Workspace parameters loaded successfully.")
 

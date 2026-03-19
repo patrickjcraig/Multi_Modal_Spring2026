@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>403</width>
-    <height>328</height>
+    <width>420</width>
+    <height>361</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -30,8 +30,8 @@ border-radius: 3px;</string>
   <widget class="QDialogButtonBox" name="buttonBox">
    <property name="geometry">
     <rect>
-     <x>300</x>
-     <y>280</y>
+     <x>310</x>
+     <y>310</y>
      <width>91</width>
      <height>41</height>
     </rect>
@@ -59,7 +59,7 @@ border-radius: 3px;</string>
     <rect>
      <x>140</x>
      <y>60</y>
-     <width>181</width>
+     <width>211</width>
      <height>31</height>
     </rect>
    </property>
@@ -77,12 +77,12 @@ border-radius: 3px;</string>
     <rect>
      <x>140</x>
      <y>20</y>
-     <width>221</width>
+     <width>261</width>
      <height>31</height>
     </rect>
    </property>
    <property name="autoFillBackground">
-    <bool>true</bool>
+    <bool>false</bool>
    </property>
    <property name="styleSheet">
     <string notr="true">background-color: #f0f0f0;
@@ -108,7 +108,7 @@ border-radius: 3px;</string>
   <widget class="QPushButton" name="btn_browse">
    <property name="geometry">
     <rect>
-     <x>330</x>
+     <x>370</x>
      <y>60</y>
      <width>31</width>
      <height>31</height>
@@ -203,7 +203,7 @@ border-radius: 3px;</string>
     <rect>
      <x>140</x>
      <y>200</y>
-     <width>81</width>
+     <width>141</width>
      <height>31</height>
     </rect>
    </property>
@@ -245,7 +245,7 @@ border-radius: 3px;</string>
     <rect>
      <x>140</x>
      <y>120</y>
-     <width>221</width>
+     <width>261</width>
      <height>31</height>
     </rect>
    </property>
@@ -351,7 +351,7 @@ padding: 3px;
 border-radius: 3px;</string>
    </property>
    <property name="text">
-    <string>ROI</string>
+    <string>ROI (X,Y,Z)</string>
    </property>
   </widget>
   <widget class="QLabel" name="label_downsampling">
@@ -394,6 +394,51 @@ border-radius: 3px;</string>
    </property>
    <property name="text">
     <string>Point Cloud Points</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_marching_cubes">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>280</y>
+     <width>111</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="autoFillBackground">
+    <bool>false</bool>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">background-color: #f0f0f0;
+padding: 3px;
+border-radius: 3px;</string>
+   </property>
+   <property name="text">
+    <string>Marching Cubes</string>
+   </property>
+  </widget>
+  <widget class="QSpinBox" name="spin_marching_cubes">
+   <property name="geometry">
+    <rect>
+     <x>140</x>
+     <y>280</y>
+     <width>81</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">background-color: #f0f0f0;
+padding: 3px;
+border-radius: 3px;</string>
+   </property>
+   <property name="buttonSymbols">
+    <enum>QAbstractSpinBox::ButtonSymbols::NoButtons</enum>
+   </property>
+   <property name="maximum">
+    <number>262143</number>
+   </property>
+   <property name="value">
+    <number>42000</number>
    </property>
   </widget>
  </widget>

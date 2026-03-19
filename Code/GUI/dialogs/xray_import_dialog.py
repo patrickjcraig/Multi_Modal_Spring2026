@@ -16,6 +16,7 @@ class XRayImportParams:
     roi_xyz: tuple[int, int, int]
     downsampling: int
     pcd_points: int
+    level: int
 
 
 class XRayImportDialog(QDialog, Ui_XRayDialog):
@@ -44,6 +45,7 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
         self.spin_roi_z.setMinimum(1)
         self.spin_downsampling.setMinimum(1)
         self.spin_pcd_pts.setMinimum(1)
+        self.spin_marching_cubes.setMinimum(1)
 
     def _setup_connections(self):
         self.btn_browse.clicked.connect(self.browse_path)
@@ -85,6 +87,7 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
         import_type = self.combo_import_type.currentText().strip().lower()
         path = self.line_path.text().strip()
         voxel_text = self.line_voxel_size.text().strip()
+        level = self.spin_marching_cubes.value()
 
         if not path:
             QMessageBox.warning(self, "Missing Path", "Please select a file or folder path.")
@@ -156,4 +159,5 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
             ),
             downsampling=self.spin_downsampling.value(),
             pcd_points=self.spin_pcd_pts.value(),
+            level=self.spin_marching_cubes.value(),
         )

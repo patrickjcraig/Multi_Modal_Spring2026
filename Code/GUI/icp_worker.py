@@ -18,13 +18,16 @@ class ICPWorkerThread(QThread):
     step = Signal(int, int, dict)  # stage, iter, payload
 
     def __init__(self, voxel_size=2.0, ransac_dist_mult=1.5, ransac_max_iter=100000,
-                 ransac_validation=1000, icp_dist_mult=0.4):
+                 ransac_validation=1000, icp_dist_mult=0.4, source_pcd=None,
+                 target_pcd=None):
         super().__init__()
         self.voxel_size = voxel_size
         self.ransac_dist_mult = ransac_dist_mult
         self.ransac_max_iter = ransac_max_iter
         self.ransac_validation = ransac_validation
         self.icp_dist_mult = icp_dist_mult
+        self.source_pcd = source_pcd
+        self.target_pcd = target_pcd
     
     def run(self):
         """Run the ICP registration in a background thread."""
@@ -40,6 +43,8 @@ class ICPWorkerThread(QThread):
                 ransac_max_iter=self.ransac_max_iter,
                 ransac_validation=self.ransac_validation,
                 icp_dist_multiplier=self.icp_dist_mult,
+                source_pcd=self.source_pcd,
+                target_pcd=self.target_pcd,
                 step_callback=cb,
             )
             self.finished.emit(results)
