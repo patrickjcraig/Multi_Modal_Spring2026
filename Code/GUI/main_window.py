@@ -1,8 +1,10 @@
+import copy
 from dataclasses import dataclass, field
 from uuid import uuid4
 
+import numpy as np
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QMainWindow
+from PySide6.QtWidgets import QAbstractSpinBox, QButtonGroup, QMainWindow, QMessageBox
 from ui_mainwindow import Ui_MainWindow
 from GUI.workspace_controller import WorkspaceController
 from GUI.scan_viewer_tab import ScanViewerTab
@@ -46,6 +48,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.scanTabs.setTabsClosable(True)
         self.scanTabs.setMovable(True)
         self._fit_to_screen()
+        self._setup_tool_panels()
 
         self.setup_connections() # wire signals to the controllers above
         self._sync_selection_ui()
@@ -90,9 +93,156 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.toolButton_5.clicked.connect(self.mark_current_as_target)
         self.scanTabs.currentChanged.connect(self._on_tab_changed)
         self.scanTabs.tabCloseRequested.connect(self.remove_scan_tab)
+        self.btn_show_registration_tools.clicked.connect(self.show_registration_tools)
+        self.btn_show_transformation_tools.clicked.connect(self.show_transformation_tools)
+        self.actionRegistration_3.triggered.connect(self.show_registration_tools)
+        self.actionTransformation_2.triggered.connect(self.show_transformation_tools)
+        self.btn_matrix_identity.clicked.connect(self.reset_affine_matrix_to_identity)
+        self.btn_matrix_load_current.clicked.connect(self.load_current_affine_matrix)
+        self.btn_transform_apply_current.clicked.connect(self.apply_affine_to_current_scan)
+        self.btn_transform_duplicate_current.clicked.connect(self.duplicate_with_affine_transform)
+
+    def _setup_tool_panels(self):
+        self.toolPanelGroup = QButtonGroup(self)
+        self.toolPanelGroup.setExclusive(True)
+        self.toolPanelGroup.addButton(self.btn_show_registration_tools)
+        self.toolPanelGroup.addButton(self.btn_show_transformation_tools)
+
+        self._matrix_spinboxes = [
+            [getattr(self, f"matrix_{row}{col}") for col in range(4)]
+            for row in range(4)
+        ]
+        for row in self._matrix_spinboxes:
+            for spinbox in row:
+                spinbox.setDecimals(4)
+                spinbox.setRange(-100000.0, 100000.0)
+                spinbox.setSingleStep(0.1)
+                spinbox.setButtonSymbols(QAbstractSpinBox.NoButtons)
+                spinbox.setMinimumWidth(52)
+                spinbox.setMaximumWidth(60)
+
+        self.reset_affine_matrix_to_identity()
+        self.show_registration_tools()
 
     def _on_tab_changed(self, _index):
         self._sync_selection_ui()
+
+    def show_registration_tools(self):
+        self.toolsStack.setCurrentWidget(self.page_registration_tools)
+        self.btn_show_registration_tools.setChecked(True)
+
+    def show_transformation_tools(self):
+        self.toolsStack.setCurrentWidget(self.page_transformation_tools)
+        self.btn_show_transformation_tools.setChecked(True)
+        self._update_transform_status()
+
+    def reset_affine_matrix_to_identity(self):
+        self._set_affine_matrix_ui(np.eye(4, dtype=float))
+        self.label_transform_status.setText("Identity matrix loaded.")
+
+    def load_current_affine_matrix(self):
+        record = self.current_scan()
+        if record is None:
+            self.label_transform_status.setText("Select a scan tab to load its matrix.")
+            return
+
+        matrix = np.array(record.metadata.get("manual_affine_matrix", np.eye(4)), dtype=float)
+        self._set_affine_matrix_ui(matrix)
+        self.label_transform_status.setText(f"Loaded matrix for '{record.name}'.")
+
+    def apply_affine_to_current_scan(self):
+        self._apply_affine_transform(duplicate=False)
+
+    def duplicate_with_affine_transform(self):
+        self._apply_affine_transform(duplicate=True)
+
+    def _get_affine_matrix_ui(self):
+        return np.array(
+            [[spinbox.value() for spinbox in row] for row in self._matrix_spinboxes],
+            dtype=float,
+        )
+
+    def _set_affine_matrix_ui(self, matrix):
+        for row in range(4):
+            for col in range(4):
+                self._matrix_spinboxes[row][col].setValue(float(matrix[row][col]))
+
+    def _apply_affine_transform(self, duplicate):
+        record = self.current_scan()
+        if record is None:
+            self.label_transform_status.setText("Select a scan tab before applying a transform.")
+            return
+        if record.pcd is None:
+            self.label_transform_status.setText("The selected tab does not contain a point cloud.")
+            return
+        if record.is_result:
+            self.label_transform_status.setText("Choose an imported scan tab instead of a registration result.")
+            return
+
+        matrix = self._get_affine_matrix_ui()
+        if matrix.shape != (4, 4):
+            self.label_transform_status.setText("Affine matrix must be 4x4.")
+            return
+        if not np.isclose(matrix[3, 3], 1.0):
+            self.label_transform_status.setText("Bottom-right matrix value should usually be 1.0.")
+            return
+
+        try:
+            if duplicate:
+                transformed_pcd = copy.deepcopy(record.pcd)
+                transformed_pcd.transform(matrix)
+
+                transformed_mesh = copy.deepcopy(record.mesh) if record.mesh is not None else None
+                if transformed_mesh is not None:
+                    transformed_mesh.transform(matrix)
+
+                new_metadata = dict(record.metadata)
+                new_metadata["manual_affine_matrix"] = matrix.tolist()
+                new_metadata["Transform mode"] = "manual affine copy"
+
+                self.add_scan_tab(
+                    name=f"{record.name} (Affine)",
+                    pcd=transformed_pcd,
+                    mesh=transformed_mesh,
+                    modality=record.modality,
+                    path=record.path,
+                    voxel_size_mm=record.voxel_size_mm,
+                    metadata=new_metadata,
+                )
+                self.label_transform_status.setText(f"Created transformed copy of '{record.name}'.")
+                self.statusbar.showMessage(f"Created transformed copy of '{record.name}'.")
+            else:
+                record.pcd.transform(matrix)
+                if record.mesh is not None:
+                    record.mesh.transform(matrix)
+                record.metadata["manual_affine_matrix"] = matrix.tolist()
+                record.metadata["Transform mode"] = "manual affine"
+                self.update_scan_tab(
+                    record.scan_id,
+                    info_text=self._build_info_text(record.name, record.modality, record.path, record.metadata),
+                    point_clouds=[(record.name, record.pcd, None)],
+                )
+                self.label_transform_status.setText(f"Applied affine transform to '{record.name}'.")
+                self.statusbar.showMessage(f"Applied affine transform to '{record.name}'.")
+        except Exception as exc:
+            QMessageBox.critical(self, "Transform Error", str(exc))
+            self.label_transform_status.setText("Failed to apply affine transform.")
+
+        self._sync_selection_ui()
+
+    def _update_transform_status(self):
+        record = self.current_scan()
+        if record is None:
+            self.label_transform_status.setText("Select a scan tab to transform.")
+            return
+
+        if record.is_result:
+            self.label_transform_status.setText(
+                f"Current tab '{record.name}' is a registration result. Choose an imported scan."
+            )
+            return
+
+        self.label_transform_status.setText(f"Ready to transform '{record.name}'.")
 
     def current_scan_id(self):
         index = self.scanTabs.currentIndex()
@@ -256,6 +406,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.toolButton_4.setToolTip(f"Source scan: {source_name}")
         self.toolButton_5.setToolTip(f"Target scan: {target_name}")
         self.label_step_info.setText(f"Source: {source_name} | Target: {target_name}")
+        self._update_transform_status()
 
     # functionality previously implemented here (registration steps, saving,
     # import helpers, etc.) has been moved into dedicated helper classes to keep
