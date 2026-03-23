@@ -1,3 +1,5 @@
+# Old code for reference. RANSAC_STEPS took way to long to run. ICP steps is kept.
+
 """Utility routines for registration with iteration callbacks.
 
 This module provides wrappers around Open3D's registration algorithms that
@@ -25,34 +27,57 @@ def iterative_ransac(
     callback=None,
     global_transform_model="rigid",
 ):
-    """Run RANSAC once and optionally emit a single callback.
+    """Run RANSAC and invoke ``callback`` every ``step`` iterations.
 
-    The earlier implementation repeatedly re-ran RANSAC in small iteration
-    increments so the GUI could animate intermediate states. That was very
-    expensive because each callback triggered a fresh global registration run.
+    Parameters mirror those in :func:`open3d_ICP.run_RANSAC` except that
+    ``max_iterations`` is the total number of iterations we will simulate and
+    ``step`` controls the granularity of callbacks.  For each callback we
+    simply call the original RANSAC helper with the current iteration
+    limit; the returned result represents the best transform seen so far.
 
-    This helper now performs one RANSAC solve using ``max_iterations`` and
-    ``validation_iterations`` as the Open3D convergence settings. If a
-    ``callback`` is supplied, it is invoked once with ``(max_iterations,
-    result)`` so the GUI still receives a stage-complete update.
+    The ``callback`` (if supplied) receives two arguments ``(iter, result)``
+    where ``iter`` is the current iteration count and ``result`` is the
+    ``RegistrationResult`` object returned by Open3D.
+
+    Returns
+    -------
+    RegistrationResult
+        The final result after ``max_iterations`` iterations.
     """
     # avoid relative imports beyond top-level; open3d_ICP is a top-level module
     from open3d_ICP import run_RANSAC
 
-    result = run_RANSAC(
-        pcd1_down,
-        pcd2_down,
-        pcd1_fpfh,
-        pcd2_fpfh,
-        voxel_size,
-        ransac_dist_multiplier,
-        max_iterations,
-        validation_iterations,
-        global_transform_model=global_transform_model,
-    )
-    if callback is not None:
-        callback(max_iterations, result)
-    return result
+    best = None
+    # iterate in increments, keeping track of the best result seen so far
+    for it in range(step, max_iterations + 1, step):
+        res = run_RANSAC(
+            pcd1_down,
+            pcd2_down,
+            pcd1_fpfh,
+            pcd2_fpfh,
+            voxel_size,
+            ransac_dist_multiplier,
+            it,
+            validation_iterations,
+            global_transform_model=global_transform_model,
+        )
+        # if we haven't recorded a result yet, or this one is better, update
+        if best is None:
+            best = res
+        else:
+            # choose the result with higher fitness (more inliers)
+            try:
+                if res.fitness > best.fitness: # first check fitness
+                    best = res
+                elif res.fitness == best.fitness and res.inlier_rmse < best.inlier_rmse: # if fitness is equal, check RMSE
+                    best = res
+            except AttributeError:
+                # fallback to using inlier_rmse if fitness is unavailable
+                if getattr(res, "inlier_rmse", float("inf")) < getattr(best, "inlier_rmse", float("inf")):
+                    best = res
+        if callback is not None:
+            callback(it, res)
+    return best
 
 
 def iterative_icp(

@@ -107,6 +107,8 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.toolPanelGroup.setExclusive(True)
         self.toolPanelGroup.addButton(self.btn_show_registration_tools)
         self.toolPanelGroup.addButton(self.btn_show_transformation_tools)
+        self.combo_global_transform_model.setItemData(0, "rigid")
+        self.combo_global_transform_model.setItemData(1, "similarity")
 
         self._matrix_spinboxes = [
             [getattr(self, f"matrix_{row}{col}") for col in range(4)]

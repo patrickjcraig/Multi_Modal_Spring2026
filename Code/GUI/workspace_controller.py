@@ -43,6 +43,7 @@ class WorkspaceController:
             "ransac_max_iter": self.main.spinBox_ransac_max_iter.value(),
             "ransac_validation": self.main.spinBox_ransac_validation.value(),
             "icp_dist": self.main.spinBox_icp_dist.value(),
+            "global_transform_model": self.main.combo_global_transform_model.currentData(),
 
             # Application state
             "current_step": self.main.registration.current_step,
@@ -85,6 +86,10 @@ class WorkspaceController:
             self.main.spinBox_ransac_max_iter.setValue(workspace_data["ransac_max_iter"])
             self.main.spinBox_ransac_validation.setValue(workspace_data["ransac_validation"])
             self.main.spinBox_icp_dist.setValue(workspace_data["icp_dist"])
+            global_transform_model = workspace_data.get("global_transform_model", "rigid")
+            index = self.main.combo_global_transform_model.findData(global_transform_model)
+            if index >= 0:
+                self.main.combo_global_transform_model.setCurrentIndex(index)
 
             # Restore application state
             self.main.registration.current_step = workspace_data["current_step"]

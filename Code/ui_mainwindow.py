@@ -16,7 +16,7 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QIcon, QImage, QKeySequence, QLinearGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
-from PySide6.QtWidgets import (QApplication, QDoubleSpinBox, QFrame, QGridLayout,
+from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QMainWindow, QMenu,
     QMenuBar, QProgressBar, QPushButton, QSizePolicy,
     QSpacerItem, QSpinBox, QStackedWidget, QStatusBar,
@@ -212,6 +212,18 @@ class Ui_MainWindow(object):
         self.spinBox_voxel_size.setValue(2.000000000000000)
 
         self.layout_registration_tools.addWidget(self.spinBox_voxel_size)
+
+        self.label_global_transform_model = QLabel(self.page_registration_tools)
+        self.label_global_transform_model.setObjectName(u"label_global_transform_model")
+
+        self.layout_registration_tools.addWidget(self.label_global_transform_model)
+
+        self.combo_global_transform_model = QComboBox(self.page_registration_tools)
+        self.combo_global_transform_model.addItem("")
+        self.combo_global_transform_model.addItem("")
+        self.combo_global_transform_model.setObjectName(u"combo_global_transform_model")
+
+        self.layout_registration_tools.addWidget(self.combo_global_transform_model)
 
         self.line_1 = QFrame(self.page_registration_tools)
         self.line_1.setObjectName(u"line_1")
@@ -589,7 +601,7 @@ class Ui_MainWindow(object):
         self.actionTransformation_2.setText(QCoreApplication.translate("MainWindow", u"Transformation", None))
         self.actionRegistration_3.setText(QCoreApplication.translate("MainWindow", u"Registration", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Scans Workspace", None))
-        self.toolButton.setText(QCoreApplication.translate("MainWindow", u"Run RANSAC+ICP", None))
+        self.toolButton.setText(QCoreApplication.translate("MainWindow", u"Run Global + Local Registration", None))
         self.toolButton_3.setText(QCoreApplication.translate("MainWindow", u"Registration (Sample Point Cloud)", None))
         self.toolButton_2.setText(QCoreApplication.translate("MainWindow", u"Save Data", None))
         self.toolButton_4.setText(QCoreApplication.translate("MainWindow", u"Set Current As Source", None))
@@ -603,19 +615,23 @@ class Ui_MainWindow(object):
         self.btn_show_transformation_tools.setText(QCoreApplication.translate("MainWindow", u"Transform", None))
         self.label_params_title.setText(QCoreApplication.translate("MainWindow", u"Registration Parameters", None))
         self.label_voxel_size.setText(QCoreApplication.translate("MainWindow", u"Voxel Size:", None))
-        self.label_ransac_title.setText(QCoreApplication.translate("MainWindow", u"RANSAC Parameters", None))
+        self.label_global_transform_model.setText(QCoreApplication.translate("MainWindow", u"Global Transform Model:", None))
+        self.combo_global_transform_model.setToolTip(QCoreApplication.translate("MainWindow", u"Rigid keeps scale fixed. Similarity lets the global stage estimate one uniform scale factor.", None))
+        self.combo_global_transform_model.setItemText(0, QCoreApplication.translate("MainWindow", u"Rigid", None))
+        self.combo_global_transform_model.setItemText(1, QCoreApplication.translate("MainWindow", u"Similarity (uniform scale)", None))
+        self.label_ransac_title.setText(QCoreApplication.translate("MainWindow", u"Global Registration (RANSAC)", None))
         self.label_ransac_dist.setText(QCoreApplication.translate("MainWindow", u"Distance Multiplier:", None))
         self.label_ransac_max_iter.setText(QCoreApplication.translate("MainWindow", u"Max Iterations:", None))
         self.label_ransac_validation.setText(QCoreApplication.translate("MainWindow", u"Validation Iters:", None))
-        self.label_icp_title.setText(QCoreApplication.translate("MainWindow", u"ICP Parameters", None))
+        self.label_icp_title.setText(QCoreApplication.translate("MainWindow", u"Local Registration (ICP)", None))
         self.label_icp_dist.setText(QCoreApplication.translate("MainWindow", u"Distance Multiplier:", None))
         self.label_results_title.setText(QCoreApplication.translate("MainWindow", u"Registration Results", None))
-        self.label_ransac_results_title.setText(QCoreApplication.translate("MainWindow", u"RANSAC Results", None))
+        self.label_ransac_results_title.setText(QCoreApplication.translate("MainWindow", u"Global Results (RANSAC)", None))
         self.label_ransac_fitness_label.setText(QCoreApplication.translate("MainWindow", u"Fitness:", None))
         self.label_ransac_fitness.setText(QCoreApplication.translate("MainWindow", u"--", None))
         self.label_ransac_rmse_label.setText(QCoreApplication.translate("MainWindow", u"Inlier RMSE:", None))
         self.label_ransac_rmse.setText(QCoreApplication.translate("MainWindow", u"--", None))
-        self.label_icp_results_title.setText(QCoreApplication.translate("MainWindow", u"ICP Results", None))
+        self.label_icp_results_title.setText(QCoreApplication.translate("MainWindow", u"Local Results (ICP)", None))
         self.label_icp_fitness_label.setText(QCoreApplication.translate("MainWindow", u"Fitness:", None))
         self.label_icp_fitness.setText(QCoreApplication.translate("MainWindow", u"--", None))
         self.label_icp_rmse_label.setText(QCoreApplication.translate("MainWindow", u"Inlier RMSE:", None))

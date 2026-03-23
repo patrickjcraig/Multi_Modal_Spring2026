@@ -5,6 +5,14 @@ import open3d as o3d
 import numpy as np
 from makeGeometry import get_pcd_from_stl
 
+
+GLOBAL_TRANSFORM_RIGID = "rigid"
+GLOBAL_TRANSFORM_SIMILARITY = "similarity"
+
+
+def uses_uniform_scaling(global_transform_model):
+    return global_transform_model == GLOBAL_TRANSFORM_SIMILARITY
+
 # Draws the point clouds after registration for the ICP and RANSAC steps
 def draw_registration_result(source, target, transformation):
     source_temp = copy.deepcopy(source)
@@ -50,9 +58,19 @@ def import_dataset(voxel_size):
     return pcd1, pcd2, pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh
 
 # RANSAC 
-def run_RANSAC(pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh, voxel_size, 
-               ransac_dist_multiplier=1.5, max_iterations=100000, validation_iterations=1000):
+def run_RANSAC(
+    pcd1_down,
+    pcd2_down,
+    pcd1_fpfh,
+    pcd2_fpfh,
+    voxel_size,
+    ransac_dist_multiplier=1.5,
+    max_iterations=100000,
+    validation_iterations=1000,
+    global_transform_model=GLOBAL_TRANSFORM_RIGID,
+):
     distance_threshold = voxel_size * ransac_dist_multiplier
+    with_scaling = uses_uniform_scaling(global_transform_model)
     result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
         pcd1_down,
         pcd2_down,
@@ -60,7 +78,7 @@ def run_RANSAC(pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh, voxel_size,
         pcd2_fpfh,
         True,
         distance_threshold,
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
+        o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling),
         4,
         [
             o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
@@ -94,6 +112,7 @@ def run_full_registration(
     step_callback=None,
     ransac_step=1,
     icp_step=1,
+    global_transform_model=GLOBAL_TRANSFORM_RIGID,
 ):
     """Run a full registration pipeline and optionally report intermediate steps.
 
@@ -137,6 +156,7 @@ def run_full_registration(
             ransac_dist_multiplier,
             ransac_max_iter,
             ransac_validation,
+            global_transform_model=global_transform_model,
         )
     else:
         def r_cb(it, res):
@@ -152,6 +172,7 @@ def run_full_registration(
             ransac_validation,
             step=ransac_step,
             callback=r_cb,
+            global_transform_model=global_transform_model,
         )
 
     # stage 2: icp
@@ -182,6 +203,7 @@ def run_full_registration(
         "pcd2": pcd2,
         "ransac": result_ransac,
         "icp": result_icp,
+        "global_transform_model": global_transform_model,
     }
 
 if __name__ == "__main__": # this is so this does not run until the main window is open, allows this to be imported into test.py

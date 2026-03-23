@@ -80,7 +80,7 @@
            <bool>true</bool>
           </property>
           <property name="text">
-           <string>Run RANSAC+ICP</string>
+           <string>Run Global + Local Registration</string>
           </property>
          </widget>
         </item>
@@ -293,6 +293,30 @@
            </widget>
           </item>
           <item>
+           <widget class="QLabel" name="label_global_transform_model">
+            <property name="text">
+             <string>Global Transform Model:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="combo_global_transform_model">
+            <property name="toolTip">
+             <string>Rigid keeps scale fixed. Similarity lets the global stage estimate one uniform scale factor.</string>
+            </property>
+            <item>
+             <property name="text">
+              <string>Rigid</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Similarity (uniform scale)</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item>
            <widget class="Line" name="line_1">
             <property name="orientation">
              <enum>Qt::Orientation::Horizontal</enum>
@@ -307,7 +331,7 @@
              </font>
             </property>
             <property name="text">
-             <string>RANSAC Parameters</string>
+             <string>Global Registration (RANSAC)</string>
             </property>
            </widget>
           </item>
@@ -398,7 +422,7 @@
              </font>
             </property>
             <property name="text">
-             <string>ICP Parameters</string>
+             <string>Local Registration (ICP)</string>
             </property>
            </widget>
           </item>
@@ -469,7 +493,7 @@
              </font>
             </property>
             <property name="text">
-             <string>RANSAC Results</string>
+             <string>Global Results (RANSAC)</string>
             </property>
            </widget>
           </item>
@@ -522,7 +546,7 @@
              </font>
             </property>
             <property name="text">
-             <string>ICP Results</string>
+             <string>Local Results (ICP)</string>
             </property>
            </widget>
           </item>

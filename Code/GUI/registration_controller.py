@@ -1,5 +1,6 @@
 import copy
 import os
+import numpy as np
 from PySide6.QtCore import QObject
 
 from GUI.icp_worker import ICPWorkerThread
@@ -30,6 +31,9 @@ class RegistrationController(QObject):
         self.result_scan_id = None
         self.source_scan = None
         self.target_scan = None
+        self.global_transform_model = "rigid"
+        self.global_stage_name = "Global RANSAC"
+        self.local_stage_name = "Local ICP"
 
     # ------------------------------------------------------------------
     # Public methods hooked to UI signals
@@ -54,9 +58,6 @@ class RegistrationController(QObject):
 
         mw.toolButton.setEnabled(False)
         mw.progressBar.setValue(0)
-        mw.statusbar.showMessage(
-            f"Currently running ICP registration: {self.source_scan.name} -> {self.target_scan.name}"
-        )
 
         # reset history and UI state
         self.step_history = []
@@ -75,12 +76,26 @@ class RegistrationController(QObject):
         ransac_max_iter = mw.spinBox_ransac_max_iter.value()
         ransac_validation = mw.spinBox_ransac_validation.value()
         icp_dist_mult = mw.spinBox_icp_dist.value()
+        self.global_transform_model = mw.combo_global_transform_model.currentData() or "rigid"
+        if self.global_transform_model == "similarity":
+            mw.label_ransac_rmse_label.setText("Inlier RMSE / Scale:")
+        else:
+            mw.label_ransac_rmse_label.setText("Inlier RMSE:")
+        mw.statusbar.showMessage(
+            f"Running {self._describe_global_stage()} -> {self.local_stage_name}: "
+            f"{self.source_scan.name} -> {self.target_scan.name}"
+        )
 
         self.result_scan_id = mw.add_scan_tab(
             name=f"Registration {self.source_scan.name} -> {self.target_scan.name}",
             modality="registration-result",
             is_result=True,
-            metadata={"Source": self.source_scan.name, "Target": self.target_scan.name},
+            metadata={
+                "Source": self.source_scan.name,
+                "Target": self.target_scan.name,
+                "Global stage": self._describe_global_stage(),
+                "Local stage": self.local_stage_name,
+            },
         )
 
         self.icp_thread = ICPWorkerThread(
@@ -91,6 +106,7 @@ class RegistrationController(QObject):
             icp_dist_mult=icp_dist_mult,
             source_pcd=self.source_scan.pcd,
             target_pcd=self.target_scan.pcd,
+            global_transform_model=self.global_transform_model,
         )
         self.icp_thread.step.connect(self._on_registration_step)
         self.icp_thread.finished.connect(self._on_registration_complete)
@@ -169,6 +185,7 @@ class RegistrationController(QObject):
             self.ransac_result = results['ransac']
         if results.get('icp') is not None:
             self.icp_result = results['icp']
+        self.global_transform_model = results.get("global_transform_model", self.global_transform_model)
 
         self._update_results_display()
 
@@ -184,7 +201,8 @@ class RegistrationController(QObject):
         mw.progressBar.setValue(100)
         if getattr(self, 'icp_result', None) is not None:
             mw.statusbar.showMessage(
-                'Registration complete! Fitness: {:.6f}, RMSE: {:.6f}'.format(
+                '{} complete! Fitness: {:.6f}, RMSE: {:.6f}'.format(
+                    self.local_stage_name,
                     self.icp_result.fitness, self.icp_result.inlier_rmse))
         else:
             mw.statusbar.showMessage('Registration complete!')
@@ -195,7 +213,11 @@ class RegistrationController(QObject):
         mw = self.main
         if hasattr(self, 'ransac_result') and self.ransac_result is not None:
             mw.label_ransac_fitness.setText(f"{self.ransac_result.fitness:.6f}")
-            mw.label_ransac_rmse.setText(f"{self.ransac_result.inlier_rmse:.6f}")
+            details = [f"RMSE: {self.ransac_result.inlier_rmse:.6f}"]
+            scale = self._extract_uniform_scale(self.ransac_result.transformation)
+            if self.global_transform_model == "similarity":
+                details.append(f"Scale: {scale:.6f}")
+            mw.label_ransac_rmse.setText(" | ".join(details))
         else:
             mw.label_ransac_fitness.setText("--")
             mw.label_ransac_rmse.setText("--")
@@ -237,13 +259,13 @@ class RegistrationController(QObject):
         elif stage == 1:
             pct = int(iteration / total * 100) if total else 0
             mw.progressBar.setValue(pct)
-            mw.statusbar.showMessage(f"RANSAC {iteration}/{total}")
-            overlay = f"RANSAC {iteration}/{total}"
+            mw.statusbar.showMessage(f"{self.global_stage_name} {iteration}/{total}")
+            overlay = f"{self.global_stage_name} {iteration}/{total}"
         elif stage == 2:
             pct = int(iteration / total * 100) if total else 0
             mw.progressBar.setValue(pct)
-            mw.statusbar.showMessage(f"ICP {iteration}/{total}")
-            overlay = f"ICP {iteration}/{total}"
+            mw.statusbar.showMessage(f"{self.local_stage_name} {iteration}/{total}")
+            overlay = f"{self.local_stage_name} {iteration}/{total}"
         record = mw.scans.get(self.result_scan_id)
         if record is not None:
             record.tab.viewer.set_overlay_text(overlay)
@@ -270,20 +292,26 @@ class RegistrationController(QObject):
             if trans is not None:
                 source_temp.transform(trans)
             total = payload.get('total', '?')
-            mw.label_step_info.setText(f"RANSAC {iteration}/{total}")
+            mw.label_step_info.setText(f"{self._describe_global_stage()} {iteration}/{total}")
         elif stage == 2:
             trans = payload.get('icp').transformation if payload.get('icp') else None
             if trans is not None:
                 source_temp.transform(trans)
             total = payload.get('total', '?')
-            mw.label_step_info.setText(f"ICP {iteration}/{total}")
+            mw.label_step_info.setText(f"{self.local_stage_name} {iteration}/{total}")
 
         info_text = " | ".join([
             f"Registration result",
             f"Source: {self.source_scan.name if self.source_scan else 'Unknown'}",
             f"Target: {self.target_scan.name if self.target_scan else 'Unknown'}",
+            f"Global: {self._describe_global_stage()}",
+            f"Local: {self.local_stage_name}",
             f"Stage: {mw.label_step_info.text()}",
         ])
+        if stage == 1 and payload.get("ransac") is not None and self.global_transform_model == "similarity":
+            info_text += f" | Global scale: {self._extract_uniform_scale(payload['ransac'].transformation):.6f}"
+        elif stage == 2 and payload.get("icp") is not None and self.global_transform_model == "similarity":
+            info_text += f" | Current scale: {self._extract_uniform_scale(payload['icp'].transformation):.6f}"
         mw.update_scan_tab(
             self.result_scan_id,
             info_text=info_text,
@@ -292,3 +320,14 @@ class RegistrationController(QObject):
                 ("Target", target_temp, None),
             ],
         )
+
+    def _describe_global_stage(self):
+        if self.global_transform_model == "similarity":
+            return f"{self.global_stage_name} (Similarity / uniform scale)"
+        return f"{self.global_stage_name} (Rigid)"
+
+    @staticmethod
+    def _extract_uniform_scale(transformation):
+        linear = np.asarray(transformation, dtype=float)[:3, :3]
+        column_norms = np.linalg.norm(linear, axis=0)
+        return float(np.mean(column_norms))

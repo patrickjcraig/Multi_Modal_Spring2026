@@ -17,9 +17,17 @@ class ICPWorkerThread(QThread):
     # stage: 0=raw, 1=ransac, 2=icp
     step = Signal(int, int, dict)  # stage, iter, payload
 
-    def __init__(self, voxel_size=2.0, ransac_dist_mult=1.5, ransac_max_iter=100000,
-                 ransac_validation=1000, icp_dist_mult=0.4, source_pcd=None,
-                 target_pcd=None):
+    def __init__(
+        self,
+        voxel_size=2.0,
+        ransac_dist_mult=1.5,
+        ransac_max_iter=100000,
+        ransac_validation=1000,
+        icp_dist_mult=0.4,
+        source_pcd=None,
+        target_pcd=None,
+        global_transform_model="rigid",
+    ):
         super().__init__()
         self.voxel_size = voxel_size
         self.ransac_dist_mult = ransac_dist_mult
@@ -28,6 +36,7 @@ class ICPWorkerThread(QThread):
         self.icp_dist_mult = icp_dist_mult
         self.source_pcd = source_pcd
         self.target_pcd = target_pcd
+        self.global_transform_model = global_transform_model
     
     def run(self):
         """Run the ICP registration in a background thread."""
@@ -46,6 +55,7 @@ class ICPWorkerThread(QThread):
                 source_pcd=self.source_pcd,
                 target_pcd=self.target_pcd,
                 step_callback=cb,
+                global_transform_model=self.global_transform_model,
             )
             self.finished.emit(results)
         except Exception as e:
@@ -99,12 +109,12 @@ class PointCloudViewerWindow(QMainWindow):
             self.step_label.setText(text)
             self.progressBar.setValue(0)
         elif stage == 1:
-            text = f"RANSAC {iteration}/{total}" if total else f"RANSAC {iteration}"
+            text = f"Global RANSAC {iteration}/{total}" if total else f"Global RANSAC {iteration}"
             self.step_label.setText(text)
             if total:
                 self.progressBar.setValue(int(iteration / total * 100))
         elif stage == 2:
-            text = f"ICP {iteration}/{total}" if total else f"ICP {iteration}"
+            text = f"Local ICP {iteration}/{total}" if total else f"Local ICP {iteration}"
             self.step_label.setText(text)
             if total:
                 self.progressBar.setValue(int(iteration / total * 100))
