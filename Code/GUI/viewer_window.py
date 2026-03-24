@@ -17,7 +17,7 @@ class PointCloudViewerWindow(QMainWindow):
         self.setCentralWidget(self.viewer)
         
         # Create status bar with controls info
-        self.statusBar().showMessage("Left Mouse: Rotate | Right Mouse: Pan | Scroll: Zoom")
+        self.statusBar().showMessage("Left Mouse: Rotate | Right Mouse: Move Rotation Origin | Scroll: Zoom")
     
     def add_point_cloud(self, name, pcd, color=None):
         """Add a point cloud to the viewer."""

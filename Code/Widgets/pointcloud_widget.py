@@ -35,12 +35,15 @@ class PointCloudWidget(QOpenGLWidget):
         self.camera_distance = 300.0
         self.camera_angle_x = 30.0
         self.camera_angle_y = 45.0
-        self.pan_x = 0.0
-        self.pan_y = 0.0
+        self.rotation_origin = glm.vec3(0.0, 0.0, 0.0) if glm else None
         
         # Mouse tracking
         self.last_mouse_x = 0
         self.last_mouse_y = 0
+        
+        # Matrices for picking
+        self.projection = None
+        self.view = None
         
         # Shaders for point cloud rendering
         self.point_vertex_shader = """#version 400 core
@@ -203,11 +206,14 @@ void main() {
         camera_y = self.camera_distance * math.sin(math.radians(self.camera_angle_x))
         camera_z = self.camera_distance * math.cos(math.radians(self.camera_angle_y)) * math.cos(math.radians(self.camera_angle_x))
         
+        camera_pos = self.rotation_origin + glm.vec3(camera_x, camera_y, camera_z)
         view = glm.lookAt(
-            glm.vec3(camera_x + self.pan_x, camera_y + self.pan_y, camera_z),
-            glm.vec3(self.pan_x, self.pan_y, 0.0),
+            camera_pos,
+            self.rotation_origin,
             glm.vec3(0.0, 1.0, 0.0)
         )
+        self.view = view
+        self.projection = projection
         view_loc = gl.glGetUniformLocation(self.shader_id, "view")
         gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, glm.value_ptr(view))
         
@@ -240,7 +246,7 @@ void main() {
         self.last_mouse_y = event.position().y()
 
     def mouseMoveEvent(self, event: QMouseEvent):
-        """Handle mouse movement for camera rotation and panning."""
+        """Handle mouse movement for camera rotation and moving rotation origin."""
         current_x = event.position().x()
         current_y = event.position().y()
         
@@ -253,9 +259,26 @@ void main() {
             self.camera_angle_x += delta_y * 0.5
             self.camera_angle_x = max(-85, min(85, self.camera_angle_x))
         elif event.buttons() == Qt.RightButton:
-            # Pan view
-            self.pan_x -= delta_x * 0.5
-            self.pan_y += delta_y * 0.5
+            # Move rotation origin in view plane
+            if glm is not None:
+                # Compute current camera position
+                camera_x = self.camera_distance * math.sin(math.radians(self.camera_angle_y)) * math.cos(math.radians(self.camera_angle_x))
+                camera_y = self.camera_distance * math.sin(math.radians(self.camera_angle_x))
+                camera_z = self.camera_distance * math.cos(math.radians(self.camera_angle_y)) * math.cos(math.radians(self.camera_angle_x))
+                camera_pos = self.rotation_origin + glm.vec3(camera_x, camera_y, camera_z)
+                
+                # View direction from camera to rotation origin
+                view_dir = glm.normalize(self.rotation_origin - camera_pos)
+                
+                # Right vector (perpendicular to view and world up)
+                right = glm.normalize(glm.cross(view_dir, glm.vec3(0.0, 1.0, 0.0)))
+                
+                # Up vector in view plane
+                up = glm.cross(right, view_dir)
+                
+                # Move rotation origin in view plane
+                movement = delta_x * right * 0.5 - delta_y * up * 0.5  # Note: -delta_y because screen Y is inverted
+                self.rotation_origin += movement
         
         self.last_mouse_x = current_x
         self.last_mouse_y = current_y
