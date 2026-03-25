@@ -36,7 +36,13 @@ class PointCloudWidget(QOpenGLWidget):
         self.camera_angle_x = 30.0
         self.camera_angle_y = 45.0
         self.rotation_origin = glm.vec3(0.0, 0.0, 0.0) if glm else None
-        
+
+        # Grid state
+        self.grid_vao = None
+        self.grid_vbo = None
+        self.grid_vertex_count = 0
+        self.grid_dirty = True
+
         # Mouse tracking
         self.last_mouse_x = 0
         self.last_mouse_y = 0
@@ -100,9 +106,12 @@ void main() {
             'vertex_count': len(points)
         }
 
+        self.grid_dirty = True
+
     def clear_point_clouds(self):
         """Remove all point clouds from the viewer."""
         self.point_clouds.clear()
+        self.grid_dirty = True
 
     def initializeGL(self):
         """Initialize OpenGL context and shaders."""
@@ -176,36 +185,40 @@ void main() {
                 data['vbo_vertices'] = vbo_vertices
                 data['vbo_colors'] = vbo_colors
 
+        # If we have cloud data, we will generate grid geometry too
+        self.grid_dirty = True
+
+
     def paintGL(self):
-        """Render all point clouds."""
+        """Render all point clouds including grid."""
         if glm is None:
             return
-            
+        
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
         gl.glViewport(0, 0, self.width(), self.height())
-        
+
         # Setup geometry on first paintGL call if needed
         if self.point_clouds:
             needs_setup = any(data['vao'] is None for data in self.point_clouds.values())
             if needs_setup:
                 self._setup_geometry()
-        
+
         if not self.point_clouds:
             return
-        
+
         gl.glUseProgram(self.shader_id)
-        
+
         # Setup projection matrix
         aspect = self.width() / max(self.height(), 1)
         projection = glm.perspective(glm.radians(45.0), aspect, 0.1, 10000.0)
         proj_loc = gl.glGetUniformLocation(self.shader_id, "projection")
         gl.glUniformMatrix4fv(proj_loc, 1, gl.GL_FALSE, glm.value_ptr(projection))
-        
+
         # Setup view matrix with camera controls
         camera_x = self.camera_distance * math.sin(math.radians(self.camera_angle_y)) * math.cos(math.radians(self.camera_angle_x))
         camera_y = self.camera_distance * math.sin(math.radians(self.camera_angle_x))
         camera_z = self.camera_distance * math.cos(math.radians(self.camera_angle_y)) * math.cos(math.radians(self.camera_angle_x))
-        
+
         camera_pos = self.rotation_origin + glm.vec3(camera_x, camera_y, camera_z)
         view = glm.lookAt(
             camera_pos,
@@ -216,16 +229,20 @@ void main() {
         self.projection = projection
         view_loc = gl.glGetUniformLocation(self.shader_id, "view")
         gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, glm.value_ptr(view))
-        
+
+        self._update_grid_if_needed()
+        self._draw_grid()
+
         # Render each point cloud
         for name, data in self.point_clouds.items():
             if data['vao'] is not None:
                 model = glm.mat4(1.0)
                 model_loc = gl.glGetUniformLocation(self.shader_id, "model")
                 gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, glm.value_ptr(model))
-                
+
                 gl.glBindVertexArray(data['vao'])
                 gl.glDrawArrays(gl.GL_POINTS, 0, data['vertex_count'])
+
         # after rendering all clouds, draw overlay text if present
         from PySide6.QtGui import QPainter, QColor, QFont
         painter = QPainter(self)
@@ -235,6 +252,91 @@ void main() {
         painter.setFont(font)
         painter.drawText(10, 20, self._overlay_text)
         painter.end()
+
+    def _update_grid_if_needed(self):
+        if not self.grid_dirty:
+            return
+
+        points = np.concatenate([d['points'] for d in self.point_clouds.values() if len(d['points']) > 0], axis=0) if self.point_clouds else np.zeros((0,3), np.float32)
+        if points.shape[0] > 0:
+            minp = points.min(axis=0)
+            maxp = points.max(axis=0)
+            scene_size = float(np.linalg.norm(maxp - minp))
+        else:
+            scene_size = 100.0
+        scene_size = max(scene_size, 20.0)
+
+        axis_extent = scene_size * 1.2
+        tick_step = max(1.0, scene_size / 10.0)
+        tick_size = axis_extent * 0.02
+
+        lines = []
+        colors = []
+
+        axis_color_x = [1.0, 0.0, 0.0]
+        axis_color_y = [0.0, 1.0, 0.0]
+        axis_color_z = [0.0, 0.0, 1.0]
+
+        # Axis lines
+        lines.extend([[-axis_extent, 0.0, 0.0], [axis_extent, 0.0, 0.0]])
+        colors.extend([axis_color_x, axis_color_x])
+        lines.extend([[0.0, -axis_extent, 0.0], [0.0, axis_extent, 0.0]])
+        colors.extend([axis_color_y, axis_color_y])
+        lines.extend([[0.0, 0.0, -axis_extent], [0.0, 0.0, axis_extent]])
+        colors.extend([axis_color_z, axis_color_z])
+
+        # Tick marks
+        for i in np.arange(-axis_extent, axis_extent + 0.0001, tick_step):
+            if abs(i) < 1e-6:
+                continue
+            # X tick (along Z)
+            lines.extend([[i, 0.0, -tick_size], [i, 0.0, tick_size]])
+            colors.extend([axis_color_x, axis_color_x])
+            # Y tick (along X)
+            lines.extend([[-tick_size, i, 0.0], [tick_size, i, 0.0]])
+            colors.extend([axis_color_y, axis_color_y])
+            # Z tick (along X)
+            lines.extend([[-tick_size, 0.0, i], [tick_size, 0.0, i]])
+            colors.extend([axis_color_z, axis_color_z])
+
+        lines_np = np.array(lines, dtype=np.float32)
+        colors_np = np.array(colors, dtype=np.float32)
+
+        if self.grid_vao is None:
+            self.grid_vao = gl.glGenVertexArrays(1)
+        if self.grid_vbo is None:
+            self.grid_vbo = gl.glGenBuffers(1)
+
+        gl.glBindVertexArray(self.grid_vao)
+
+        interleaved = np.zeros((lines_np.shape[0], 6), dtype=np.float32)
+        interleaved[:, 0:3] = lines_np
+        interleaved[:, 3:6] = colors_np
+
+        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, self.grid_vbo)
+        gl.glBufferData(gl.GL_ARRAY_BUFFER, interleaved.nbytes, interleaved, gl.GL_STATIC_DRAW)
+
+        gl.glEnableVertexAttribArray(0)
+        gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, 24, ctypes.c_void_p(0))
+        gl.glEnableVertexAttribArray(1)
+        gl.glVertexAttribPointer(1, 3, gl.GL_FLOAT, gl.GL_FALSE, 24, ctypes.c_void_p(12))
+
+        gl.glBindVertexArray(0)
+
+        self.grid_vertex_count = lines_np.shape[0]
+        self.grid_dirty = False
+
+    def _draw_grid(self):
+        if self.grid_vertex_count == 0 or self.grid_vao is None:
+            return
+
+        model = glm.mat4(1.0)
+        model_loc = gl.glGetUniformLocation(self.shader_id, "model")
+        gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, glm.value_ptr(model))
+
+        gl.glBindVertexArray(self.grid_vao)
+        gl.glDrawArrays(gl.GL_LINES, 0, self.grid_vertex_count)
+        gl.glBindVertexArray(0)
 
     def resizeGL(self, w, h):
         """Handle window resize."""
