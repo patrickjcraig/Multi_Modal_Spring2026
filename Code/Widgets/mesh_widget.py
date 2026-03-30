@@ -7,7 +7,6 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QMouseEvent
 
-from Shaders.pointcloud_shaders import POINT_VERTEX_SHADER, POINT_FRAGMENT_SHADER
 from Shaders.mesh_shaders import MESH_VERTEX_SHADER, MESH_FRAGMENT_SHADER
 
 try:
@@ -16,26 +15,20 @@ except ImportError:
     print("Warning: PyGLM not installed. Please install it with: pip install PyGLM")
     glm = None
 
-class PointCloudWidget(QOpenGLWidget):
+class MeshWidget(QOpenGLWidget):
     """
-    OpenGL widget for rendering point clouds and meshes from open3d.
-    Supports multiple point clouds and meshes with different colors and transformations.
-
-    Toggle between point cloud and mesh visibility using Ctrl+T.
-    The widget can optionally display overlay text (e.g. "RANSAC 5/100")
-    in the top‑left corner; the text is set with :meth:`set_overlay_text`.
+    OpenGL widget for rendering triangle meshes from open3d.
+    Supports multiple meshes with different colors and transformations.
+    Shares camera controls with PointCloudWidget for unified viewing.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.point_clouds = {}  # Dictionary to store point cloud data {name: {vertices, colors, VAO, VBO}}
-        self.meshes = {}        # Dictionary to store mesh data {name: {vertices, normals, triangles, VAO, VBOs, IBO}}
-        self.point_shader_id = None
-        self.mesh_shader_id = None
-        # overlay text rendered with QPainter after OpenGL draw
+        self.meshes = {}  # Dictionary to store mesh data {name: {vertices, normals, indices, VAO, VBO, IBO, index_count}}
+        self.shader_id = None
         self._overlay_text = ""
         
-        # Camera parameters
+        # Camera parameters (shared with PointCloudWidget)
         self.camera_distance = 300.0
         self.camera_angle_x = 30.0
         self.camera_angle_y = 45.0
@@ -55,44 +48,8 @@ class PointCloudWidget(QOpenGLWidget):
         self.projection = None
         self.view = None
         
-        # Visibility and opacity control
-        self.pointcloud_opacity = 1.0
-        self.mesh_opacity = 0.0
-        self.show_pointcloud = True
-        self.show_mesh = False
-
-    def add_point_cloud(self, name, pcd, color=None):
-        """
-        Add an open3d point cloud to the viewer.
-        
-        Args:
-            name: Identifier for the point cloud
-            pcd: open3d.geometry.PointCloud
-            color: Optional RGB color tuple (defaults to point cloud's colors)
-        """
-        points = np.asarray(pcd.points, dtype=np.float32)
-        
-        if color is not None:
-            # Use specified color for all points
-            colors = np.full((len(points), 3), color, dtype=np.float32)
-        elif pcd.has_colors():
-            # Use point cloud's colors
-            colors = np.asarray(pcd.colors, dtype=np.float32)
-        else:
-            # Default white
-            colors = np.ones((len(points), 3), dtype=np.float32)
-        
-        # Store the data
-        self.point_clouds[name] = {
-            'points': points,
-            'colors': colors,
-            'vao': None,
-            'vbo_vertices': None,
-            'vbo_colors': None,
-            'vertex_count': len(points)
-        }
-
-        self.grid_dirty = True
+        # Mesh color (default semi-transparent blue)
+        self.mesh_color = (0.3, 0.5, 0.9)
 
     def add_mesh(self, name, mesh, color=None):
         """
@@ -123,14 +80,9 @@ class PointCloudWidget(QOpenGLWidget):
             'vbo_normals': None,
             'ibo': None,
             'index_count': len(triangles) * 3,
-            'color': color if color is not None else (0.3, 0.5, 0.9)
+            'color': color if color is not None else self.mesh_color
         }
 
-        self.grid_dirty = True
-
-    def clear_point_clouds(self):
-        """Remove all point clouds from the viewer."""
-        self.point_clouds.clear()
         self.grid_dirty = True
 
     def clear_meshes(self):
@@ -138,82 +90,45 @@ class PointCloudWidget(QOpenGLWidget):
         self.meshes.clear()
         self.grid_dirty = True
 
-    def toggle_pointcloud_mesh_view(self):
-        """Toggle visibility between point cloud and mesh."""
-        if self.show_pointcloud:
-            # Switch to mesh view
-            self.pointcloud_opacity = 0.0
-            self.mesh_opacity = 1.0
-            self.show_pointcloud = False
-            self.show_mesh = True
-        else:
-            # Switch back to point cloud view
-            self.pointcloud_opacity = 1.0
-            self.mesh_opacity = 0.0
-            self.show_pointcloud = True
-            self.show_mesh = False
-        
-        self.update()
-
     def initializeGL(self):
         """Initialize OpenGL context and shaders."""
         gl.glClearColor(0.2, 0.2, 0.2, 1.0)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glEnable(gl.GL_MULTISAMPLE)
-        gl.glPointSize(2.0)
+        
+        # Enable smooth shading
+        gl.glShadeModel(gl.GL_SMOOTH)
         
         # Compile shaders
         self._load_shaders()
         
-        # Setup VAOs/VBOs for all point clouds
-        if self.point_clouds:
-            self._setup_point_cloud_geometry()
-        
         # Setup VAOs/VBOs for all meshes
         if self.meshes:
-            self._setup_mesh_geometry()
+            self._setup_geometry()
 
     def _load_shaders(self):
-        """Compile and link both point cloud and mesh shaders."""
-        # Load point cloud shader
-        self.point_shader_id = gl.glCreateProgram()
+        """Compile and link shaders."""
+        self.shader_id = gl.glCreateProgram()
         
+        # Vertex shader
         vertex_id = gl.glCreateShader(gl.GL_VERTEX_SHADER)
-        gl.glShaderSource(vertex_id, POINT_VERTEX_SHADER)
+        gl.glShaderSource(vertex_id, MESH_VERTEX_SHADER)
         gl.glCompileShader(vertex_id)
         self._check_shader_compilation(vertex_id)
         
+        # Fragment shader
         fragment_id = gl.glCreateShader(gl.GL_FRAGMENT_SHADER)
-        gl.glShaderSource(fragment_id, POINT_FRAGMENT_SHADER)
+        gl.glShaderSource(fragment_id, MESH_FRAGMENT_SHADER)
         gl.glCompileShader(fragment_id)
         self._check_shader_compilation(fragment_id)
         
-        gl.glAttachShader(self.point_shader_id, vertex_id)
-        gl.glAttachShader(self.point_shader_id, fragment_id)
-        gl.glLinkProgram(self.point_shader_id)
+        # Link program
+        gl.glAttachShader(self.shader_id, vertex_id)
+        gl.glAttachShader(self.shader_id, fragment_id)
+        gl.glLinkProgram(self.shader_id)
         
         gl.glDeleteShader(vertex_id)
         gl.glDeleteShader(fragment_id)
-        
-        # Load mesh shader
-        self.mesh_shader_id = gl.glCreateProgram()
-        
-        mesh_vertex_id = gl.glCreateShader(gl.GL_VERTEX_SHADER)
-        gl.glShaderSource(mesh_vertex_id, MESH_VERTEX_SHADER)
-        gl.glCompileShader(mesh_vertex_id)
-        self._check_shader_compilation(mesh_vertex_id)
-        
-        mesh_fragment_id = gl.glCreateShader(gl.GL_FRAGMENT_SHADER)
-        gl.glShaderSource(mesh_fragment_id, MESH_FRAGMENT_SHADER)
-        gl.glCompileShader(mesh_fragment_id)
-        self._check_shader_compilation(mesh_fragment_id)
-        
-        gl.glAttachShader(self.mesh_shader_id, mesh_vertex_id)
-        gl.glAttachShader(self.mesh_shader_id, mesh_fragment_id)
-        gl.glLinkProgram(self.mesh_shader_id)
-        
-        gl.glDeleteShader(mesh_vertex_id)
-        gl.glDeleteShader(mesh_fragment_id)
 
     def _check_shader_compilation(self, shader_id):
         """Check if shader compiled successfully."""
@@ -221,38 +136,7 @@ class PointCloudWidget(QOpenGLWidget):
             print(gl.glGetShaderInfoLog(shader_id))
             raise RuntimeError("Shader compilation failed")
 
-    def _setup_point_cloud_geometry(self):
-        """Setup VAO and VBO for all point clouds."""
-        for name, data in self.point_clouds.items():
-            if data['vao'] is None:
-                # Create VAO
-                vao = gl.glGenVertexArrays(1)
-                gl.glBindVertexArray(vao)
-                
-                # Create and fill vertex VBO
-                vbo_vertices = gl.glGenBuffers(1)
-                gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vbo_vertices)
-                gl.glBufferData(gl.GL_ARRAY_BUFFER, data['points'].nbytes, data['points'], gl.GL_STATIC_DRAW)
-                gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, 12, ctypes.c_void_p(0))
-                gl.glEnableVertexAttribArray(0)
-                
-                # Create and fill color VBO
-                vbo_colors = gl.glGenBuffers(1)
-                gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vbo_colors)
-                gl.glBufferData(gl.GL_ARRAY_BUFFER, data['colors'].nbytes, data['colors'], gl.GL_STATIC_DRAW)
-                gl.glVertexAttribPointer(1, 3, gl.GL_FLOAT, gl.GL_FALSE, 12, ctypes.c_void_p(0))
-                gl.glEnableVertexAttribArray(1)
-                
-                gl.glBindVertexArray(0)
-                
-                data['vao'] = vao
-                data['vbo_vertices'] = vbo_vertices
-                data['vbo_colors'] = vbo_colors
-
-        # If we have cloud data, we will generate grid geometry too
-        self.grid_dirty = True
-
-    def _setup_mesh_geometry(self):
+    def _setup_geometry(self):
         """Setup VAO, VBO, and IBO for all meshes."""
         for name, data in self.meshes.items():
             if data['vao'] is None:
@@ -286,11 +170,11 @@ class PointCloudWidget(QOpenGLWidget):
                 data['vbo_normals'] = vbo_normals
                 data['ibo'] = ibo
 
+        # Generate grid geometry if we have mesh data
         self.grid_dirty = True
 
-
     def paintGL(self):
-        """Render all point clouds and meshes including grid."""
+        """Render all meshes including grid."""
         if glm is None:
             return
         
@@ -298,25 +182,23 @@ class PointCloudWidget(QOpenGLWidget):
         gl.glViewport(0, 0, self.width(), self.height())
 
         # Setup geometry on first paintGL call if needed
-        if self.point_clouds:
-            needs_setup = any(data['vao'] is None for data in self.point_clouds.values())
-            if needs_setup:
-                self._setup_point_cloud_geometry()
-        
         if self.meshes:
             needs_setup = any(data['vao'] is None for data in self.meshes.values())
             if needs_setup:
-                self._setup_mesh_geometry()
+                self._setup_geometry()
 
-        # Return early if nothing to render
-        if not self.point_clouds and not self.meshes:
+        if not self.meshes:
             return
 
-        # Setup projection matrix (shared by both shaders)
+        gl.glUseProgram(self.shader_id)
+
+        # Setup projection matrix
         aspect = self.width() / max(self.height(), 1)
         projection = glm.perspective(glm.radians(45.0), aspect, 0.1, 10000.0)
+        proj_loc = gl.glGetUniformLocation(self.shader_id, "projection")
+        gl.glUniformMatrix4fv(proj_loc, 1, gl.GL_FALSE, glm.value_ptr(projection))
 
-        # Setup view matrix with camera controls (shared by both shaders)
+        # Setup view matrix with camera controls
         camera_x = self.camera_distance * math.sin(math.radians(self.camera_angle_y)) * math.cos(math.radians(self.camera_angle_x))
         camera_y = self.camera_distance * math.sin(math.radians(self.camera_angle_x))
         camera_z = self.camera_distance * math.cos(math.radians(self.camera_angle_y)) * math.cos(math.radians(self.camera_angle_x))
@@ -329,53 +211,27 @@ class PointCloudWidget(QOpenGLWidget):
         )
         self.view = view
         self.projection = projection
+        view_loc = gl.glGetUniformLocation(self.shader_id, "view")
+        gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, glm.value_ptr(view))
 
         self._update_grid_if_needed()
         self._draw_grid()
 
-        # Render point clouds if visible
-        if self.pointcloud_opacity > 0.0 and self.point_clouds:
-            gl.glUseProgram(self.point_shader_id)
-            
-            proj_loc = gl.glGetUniformLocation(self.point_shader_id, "projection")
-            gl.glUniformMatrix4fv(proj_loc, 1, gl.GL_FALSE, glm.value_ptr(projection))
-            
-            view_loc = gl.glGetUniformLocation(self.point_shader_id, "view")
-            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, glm.value_ptr(view))
+        # Render each mesh
+        for name, data in self.meshes.items():
+            if data['vao'] is not None:
+                model = glm.mat4(1.0)
+                model_loc = gl.glGetUniformLocation(self.shader_id, "model")
+                gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, glm.value_ptr(model))
+                
+                # Set mesh color
+                color_loc = gl.glGetUniformLocation(self.shader_id, "meshColor")
+                gl.glUniform3f(color_loc, data['color'][0], data['color'][1], data['color'][2])
 
-            for name, data in self.point_clouds.items():
-                if data['vao'] is not None:
-                    model = glm.mat4(1.0)
-                    model_loc = gl.glGetUniformLocation(self.point_shader_id, "model")
-                    gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, glm.value_ptr(model))
+                gl.glBindVertexArray(data['vao'])
+                gl.glDrawElements(gl.GL_TRIANGLES, data['index_count'], gl.GL_UNSIGNED_INT, ctypes.c_void_p(0))
 
-                    gl.glBindVertexArray(data['vao'])
-                    gl.glDrawArrays(gl.GL_POINTS, 0, data['vertex_count'])
-
-        # Render meshes if visible
-        if self.mesh_opacity > 0.0 and self.meshes:
-            gl.glUseProgram(self.mesh_shader_id)
-            
-            proj_loc = gl.glGetUniformLocation(self.mesh_shader_id, "projection")
-            gl.glUniformMatrix4fv(proj_loc, 1, gl.GL_FALSE, glm.value_ptr(projection))
-            
-            view_loc = gl.glGetUniformLocation(self.mesh_shader_id, "view")
-            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, glm.value_ptr(view))
-
-            for name, data in self.meshes.items():
-                if data['vao'] is not None:
-                    model = glm.mat4(1.0)
-                    model_loc = gl.glGetUniformLocation(self.mesh_shader_id, "model")
-                    gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, glm.value_ptr(model))
-                    
-                    # Set mesh color
-                    color_loc = gl.glGetUniformLocation(self.mesh_shader_id, "meshColor")
-                    gl.glUniform3f(color_loc, data['color'][0], data['color'][1], data['color'][2])
-
-                    gl.glBindVertexArray(data['vao'])
-                    gl.glDrawElements(gl.GL_TRIANGLES, data['index_count'], gl.GL_UNSIGNED_INT, ctypes.c_void_p(0))
-
-        # Render overlay text if present
+        # Render overlay text
         from PySide6.QtGui import QPainter, QColor, QFont
         painter = QPainter(self)
         painter.setPen(QColor(255, 255, 255))
@@ -389,11 +245,7 @@ class PointCloudWidget(QOpenGLWidget):
         if not self.grid_dirty:
             return
 
-        # Collect points from both point clouds and meshes for grid sizing
-        pc_points = np.concatenate([d['points'] for d in self.point_clouds.values() if len(d['points']) > 0], axis=0) if self.point_clouds else np.zeros((0,3), np.float32)
-        mesh_points = np.concatenate([d['vertices'] for d in self.meshes.values() if len(d['vertices']) > 0], axis=0) if self.meshes else np.zeros((0,3), np.float32)
-        points = np.concatenate([pc_points, mesh_points], axis=0) if (pc_points.shape[0] > 0 or mesh_points.shape[0] > 0) else np.zeros((0,3), np.float32)
-        
+        points = np.concatenate([d['vertices'] for d in self.meshes.values() if len(d['vertices']) > 0], axis=0) if self.meshes else np.zeros((0,3), np.float32)
         if points.shape[0] > 0:
             minp = points.min(axis=0)
             maxp = points.max(axis=0)
@@ -466,10 +318,8 @@ class PointCloudWidget(QOpenGLWidget):
         if self.grid_vertex_count == 0 or self.grid_vao is None:
             return
 
-        gl.glUseProgram(self.point_shader_id)
-        
         model = glm.mat4(1.0)
-        model_loc = gl.glGetUniformLocation(self.point_shader_id, "model")
+        model_loc = gl.glGetUniformLocation(self.shader_id, "model")
         gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, glm.value_ptr(model))
 
         gl.glBindVertexArray(self.grid_vao)
@@ -517,20 +367,15 @@ class PointCloudWidget(QOpenGLWidget):
                 up = glm.cross(right, view_dir)
                 
                 # Move rotation origin in view plane
-                movement = delta_x * right * 0.5 - delta_y * up * 0.5  # Note: -delta_y because screen Y is inverted
+                movement = delta_x * right * 0.5 - delta_y * up * 0.5
                 self.rotation_origin += movement
         
         self.last_mouse_x = current_x
         self.last_mouse_y = current_y
         self.update()
 
-
     def set_overlay_text(self, text: str):
-        """Set the overlay string shown in the upper left of the widget.
-
-        The text is rendered after all point clouds have been drawn in
-        :meth:`paintGL` so that it remains unobscured by the 3D scene.
-        """
+        """Set the overlay string shown in the upper left of the widget."""
         self._overlay_text = text
         self.update()
 

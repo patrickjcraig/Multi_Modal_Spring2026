@@ -279,6 +279,10 @@ class AppTest(QMainWindow, Ui_MainWindow):
         tab.set_info_text(self._build_info_text(name, modality, path, metadata))
         if pcd is not None:
             tab.set_point_clouds([(name, pcd, None)])
+        
+        # Add mesh if provided
+        if mesh is not None:
+            tab.set_mesh(name, mesh)
 
         self.scans[scan_id] = ScanRecord(
             scan_id=scan_id,

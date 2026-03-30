@@ -1,5 +1,6 @@
-from PySide6.QtCore import QThread, Signal
-from PySide6.QtWidgets import QMainWindow
+from PySide6.QtCore import QThread, Signal, Qt
+from PySide6.QtWidgets import QMainWindow, QLabel, QProgressBar
+from PySide6.QtGui import QKeyEvent
 from open3d_ICP import run_full_registration
 from Widgets.pointcloud_widget import PointCloudWidget
 
@@ -64,39 +65,57 @@ class ICPWorkerThread(QThread):
 
 class PointCloudViewerWindow(QMainWindow):
     """
-    Standalone window for viewing point clouds with OpenGL.
-    Can be used independently or integrated into the main GUI.
+    Standalone window for viewing point clouds and meshes with OpenGL.
+    Can toggle between point cloud and mesh visibility using Ctrl+T.
+    Both geometries are rendered in the same OpenGL context with opacity control.
     """
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Point Cloud Viewer - OpenGL")
+        self.setWindowTitle("Point Cloud & Mesh Viewer - OpenGL")
         self.setGeometry(100, 100, 1000, 800)
         
-        # Create the OpenGL widget
+        # Create unified viewer that supports both point clouds and meshes
         self.viewer = PointCloudWidget()
         self.setCentralWidget(self.viewer)
         
         # Create status bar with controls info
-        self.statusBar().showMessage("Left Mouse: Rotate | Right Mouse: Pan | Scroll: Zoom")
-        # add step label and progress bar as permanent widgets
-        from PySide6.QtWidgets import QLabel, QProgressBar
+        status_msg = "Left Mouse: Rotate | Right Mouse: Pan | Scroll: Zoom | Ctrl+T: Toggle View"
+        self.statusBar().showMessage(status_msg)
+        
+        # Add step label and progress bar to status bar
         self.step_label = QLabel("")
         self.progressBar = QProgressBar()
         self.progressBar.setMaximum(100)
         self.progressBar.setValue(0)
         self.statusBar().addPermanentWidget(self.step_label)
         self.statusBar().addPermanentWidget(self.progressBar)
+        
+        # Enable keyboard focus
+        self.setFocusPolicy(Qt.StrongFocus)
+    
+    def keyPressEvent(self, event: QKeyEvent):
+        """Handle keyboard events."""
+        if event.key() == Qt.Key_T and event.modifiers() == Qt.ControlModifier:
+            self.viewer.toggle_pointcloud_mesh_view()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
     
     def add_point_cloud(self, name, pcd, color=None):
         """Add a point cloud to the viewer."""
         self.viewer.add_point_cloud(name, pcd, color)
-        # Don't setup geometry here - let it happen during first paint call
+        self.viewer.update()
+    
+    def add_mesh(self, name, mesh, color=None):
+        """Add a mesh to the viewer."""
+        self.viewer.add_mesh(name, mesh, color)
         self.viewer.update()
     
     def clear(self):
-        """Clear all point clouds."""
+        """Clear all point clouds and meshes."""
         self.viewer.clear_point_clouds()
+        self.viewer.clear_meshes()
         self.viewer.update()
 
     def update_stage(self, stage, iteration, total=None):
@@ -118,9 +137,11 @@ class PointCloudViewerWindow(QMainWindow):
             self.step_label.setText(text)
             if total:
                 self.progressBar.setValue(int(iteration / total * 100))
-        # update overlay text on inner widget if supported
+        
+        # Update overlay text on viewer
         try:
-            self.viewer.set_overlay_text(text)
+            if hasattr(self.viewer, 'set_overlay_text'):
+                self.viewer.set_overlay_text(text)
         except Exception:
             pass
 
