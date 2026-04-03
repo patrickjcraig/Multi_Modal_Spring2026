@@ -223,6 +223,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
                     record.scan_id,
                     info_text=self._build_info_text(record.name, record.modality, record.path, record.metadata),
                     point_clouds=[(record.name, record.pcd, None)],
+                    meshes=[(record.name, record.mesh, None)] if record.mesh is not None else [],
                 )
                 self.label_transform_status.setText(f"Applied affine transform to '{record.name}'.")
                 self.statusbar.showMessage(f"Applied affine transform to '{record.name}'.")
@@ -304,7 +305,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self._sync_selection_ui()
         return scan_id
 
-    def update_scan_tab(self, scan_id, title=None, info_text=None, point_clouds=None):
+    def update_scan_tab(self, scan_id, title=None, info_text=None, point_clouds=None, meshes=None):
         record = self.scans.get(scan_id)
         if record is None:
             return
@@ -317,6 +318,9 @@ class AppTest(QMainWindow, Ui_MainWindow):
 
         if point_clouds is not None:
             record.tab.set_point_clouds(point_clouds)
+
+        if meshes is not None:
+            record.tab.set_meshes(meshes)
 
         index = self.scanTabs.indexOf(record.tab)
         if index >= 0:

@@ -61,6 +61,16 @@ class ScanViewerTab(QWidget):
         """
         self.viewer.add_mesh(name, mesh, color)
         self.viewer.update()
+
+    def set_meshes(self, meshes):
+        """Replace displayed meshes with ``meshes``.
+
+        ``meshes`` is an iterable of ``(name, mesh, color)`` tuples.
+        """
+        self.viewer.clear_meshes()
+        for name, mesh, color in meshes:
+            self.viewer.add_mesh(name, mesh, color=color)
+        self.viewer.update()
     
     def clear_meshes(self):
         """Clear all meshes from the viewer."""
