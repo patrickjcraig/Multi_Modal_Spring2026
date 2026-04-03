@@ -331,7 +331,7 @@ class PointCloudWidget(QOpenGLWidget):
         self.projection = projection
 
         self._update_grid_if_needed()
-        self._draw_grid()
+        self._draw_grid(projection, view)
 
         # Render point clouds if visible
         if self.pointcloud_opacity > 0.0 and self.point_clouds:
@@ -462,11 +462,18 @@ class PointCloudWidget(QOpenGLWidget):
         self.grid_vertex_count = lines_np.shape[0]
         self.grid_dirty = False
 
-    def _draw_grid(self):
+    def _draw_grid(self, projection, view):
         if self.grid_vertex_count == 0 or self.grid_vao is None:
             return
 
         gl.glUseProgram(self.point_shader_id)
+
+        # Keep axes/grid camera transform independent of whether point clouds are visible.
+        proj_loc = gl.glGetUniformLocation(self.point_shader_id, "projection")
+        gl.glUniformMatrix4fv(proj_loc, 1, gl.GL_FALSE, glm.value_ptr(projection))
+
+        view_loc = gl.glGetUniformLocation(self.point_shader_id, "view")
+        gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, glm.value_ptr(view))
         
         model = glm.mat4(1.0)
         model_loc = gl.glGetUniformLocation(self.point_shader_id, "model")
