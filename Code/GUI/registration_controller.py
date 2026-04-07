@@ -280,6 +280,9 @@ class RegistrationController(QObject):
         source_temp.paint_uniform_color([1.0, 0.706, 0.0])
         target_temp.paint_uniform_color([0.0, 0.651, 0.929])
 
+        source_mesh_temp = copy.deepcopy(self.source_scan.mesh) if self.source_scan and self.source_scan.mesh is not None else None
+        target_mesh_temp = copy.deepcopy(self.target_scan.mesh) if self.target_scan and self.target_scan.mesh is not None else None
+
         if self.step_history:
             stage, iteration, payload = self.step_history[self.current_step]
         else:
@@ -291,14 +294,24 @@ class RegistrationController(QObject):
             trans = payload.get('ransac').transformation if payload.get('ransac') else None
             if trans is not None:
                 source_temp.transform(trans)
+                if source_mesh_temp is not None:
+                    source_mesh_temp.transform(trans)
             total = payload.get('total', '?')
             mw.label_step_info.setText(f"{self._describe_global_stage()} {iteration}/{total}")
         elif stage == 2:
             trans = payload.get('icp').transformation if payload.get('icp') else None
             if trans is not None:
                 source_temp.transform(trans)
+                if source_mesh_temp is not None:
+                    source_mesh_temp.transform(trans)
             total = payload.get('total', '?')
             mw.label_step_info.setText(f"{self.local_stage_name} {iteration}/{total}")
+
+        meshes = []
+        if source_mesh_temp is not None:
+            meshes.append(("Source Mesh", source_mesh_temp, (1.0, 0.706, 0.0)))
+        if target_mesh_temp is not None:
+            meshes.append(("Target Mesh", target_mesh_temp, (0.0, 0.651, 0.929)))
 
         info_text = " | ".join([
             f"Registration result",
@@ -319,6 +332,7 @@ class RegistrationController(QObject):
                 ("Source", source_temp, None),
                 ("Target", target_temp, None),
             ],
+            meshes=meshes,
         )
 
     def _describe_global_stage(self):

@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from PySide6.QtWidgets import QMessageBox
-from makeGeometry import VolumeSource, get_pcd_from_ct_stack, inspect_tiff_stack
+from makeGeometry import VolumeSource, get_mesh_from_ct_stack, inspect_tiff_stack
 from GUI.dialogs.xray_import_dialog import XRayImportDialog
 
 
@@ -38,12 +38,11 @@ class ImportController:
                 os.path.join(os.path.dirname(__file__), '..', '..', '120kv_FDK')
             )
 
-            pcd, mesh, level = get_pcd_from_ct_stack(
+            mesh, level = get_mesh_from_ct_stack(
                 folder_path=demo_folder,
                 downsample_zyx=4,
                 crop_zyx=(256, 256, 256),
                 level=None,
-                n_points=5000,
             )
             volume_source = VolumeSource(
                 folder_path=demo_folder,
@@ -51,6 +50,7 @@ class ImportController:
                 crop_zyx=(256, 256, 256),
                 default_downsample_zyx=4,
             )
+            pcd = mesh.sample_points_poisson_disk(number_of_points=5000)
 
             print("MC level:", level)
             print("PCD points:", np.asarray(pcd.points).shape[0])
@@ -63,9 +63,13 @@ class ImportController:
                 path=demo_folder,
                 volume_source=volume_source,
                 metadata={
+                    
                     "Points": np.asarray(pcd.points).shape[0],
+                   
+                    "Mesh source": "CT stack marching cubes",
                     "MC level": level,
                     "3D volume": "lazy preview available",
+                ,
                 },
             )
             if mw.source_scan_id is None:
@@ -128,12 +132,12 @@ class ImportController:
             crop_zyx = (roi_xyz[2], roi_xyz[1], roi_xyz[0])
             stack_info = inspect_tiff_stack(folder_path)
 
-            pcd, mesh, level = get_pcd_from_ct_stack(
+            mesh, level = get_mesh_from_ct_stack(
                 folder_path=folder_path,
+                voxel_size_mm=voxel_size_mm,
                 downsample_zyx=downsampling,
                 crop_zyx=crop_zyx,
                 level=level,
-                n_points=pcd_points,
             )
             volume_source = VolumeSource(
                 folder_path=folder_path,
@@ -141,6 +145,7 @@ class ImportController:
                 crop_zyx=crop_zyx,
                 default_downsample_zyx=downsampling,
             )
+            pcd = mesh.sample_points_poisson_disk(number_of_points=pcd_points)
 
             print("Imported TIFF stack from:", folder_path)
             print("Voxel size (mm):", voxel_size_mm)
@@ -162,6 +167,7 @@ class ImportController:
                     "ROI XYZ": roi_xyz,
                     "Downsampling": downsampling,
                     "Points": pcd_points,
+                    "Mesh source": "CT stack marching cubes",
                     "MC level": level,
                     "Stack shape ZYX": stack_info["shape_zyx"],
                     "Stack dtype": stack_info["dtype"],
