@@ -110,7 +110,9 @@ class VolumeRenderWidget(QWidget):
         else:
             colors = np.ones((len(points), 4), dtype=np.float32)
 
-        item = gl.GLScatterPlotItem(pos=points, color=colors, size=1.5, pxMode=False)
+        # Use pixel-sized markers so points keep a consistent on-screen size
+        # and do not appear as large world-space spheres when zooming/panning.
+        item = gl.GLScatterPlotItem(pos=points, color=colors, size=2.0, pxMode=True)
         self._view.addItem(item)
         self.point_clouds[name] = {"points": points, "item": item}
         self._apply_visibility()

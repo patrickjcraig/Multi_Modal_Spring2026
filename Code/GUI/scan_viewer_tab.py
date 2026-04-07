@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from PySide6.QtCore import QThread, Qt, Signal
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut
 
 from makeGeometry import load_ct_volume_preview
 from Widgets.volume_widget import VolumeRenderWidget
@@ -95,6 +95,15 @@ class ScanViewerTab(QWidget):
         self.btn_toggle_mesh.clicked.connect(self.toggle_pointcloud_mesh_view)
         self.btn_reload_volume.clicked.connect(self.reload_volume)
         self.spin_volume_downsample.valueChanged.connect(self._mark_volume_stale)
+
+        # Keep shortcuts working even when child widgets (like GLViewWidget) have focus.
+        self.shortcut_toggle_volume = QShortcut(QKeySequence("Ctrl+T"), self)
+        self.shortcut_toggle_volume.setContext(Qt.WidgetWithChildrenShortcut)
+        self.shortcut_toggle_volume.activated.connect(self.toggle_volume_view)
+
+        self.shortcut_toggle_mesh = QShortcut(QKeySequence("Ctrl+M"), self)
+        self.shortcut_toggle_mesh.setContext(Qt.WidgetWithChildrenShortcut)
+        self.shortcut_toggle_mesh.activated.connect(self.toggle_pointcloud_mesh_view)
         
         # Enable focus for keyboard events
         self.setFocusPolicy(Qt.StrongFocus)
