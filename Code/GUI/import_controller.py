@@ -69,7 +69,6 @@ class ImportController:
                     "Mesh source": "CT stack marching cubes",
                     "MC level": level,
                     "3D volume": "lazy preview available",
-                ,
                 },
             )
             if mw.source_scan_id is None:
