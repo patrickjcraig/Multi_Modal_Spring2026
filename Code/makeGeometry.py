@@ -206,10 +206,12 @@ def get_mesh_from_ct_stack(
         allow_degenerate=False,
     )
 
-    # Put mesh into "global" coordinates of the downsampled volume (optional but useful later)
+    # marching_cubes returns coordinates in array index order (Z, Y, X).
+    # Keep world coords aligned with the volume viewer by converting to (X, Y, Z).
     verts[:, 0] += z0 * s
     verts[:, 1] += y0 * s
     verts[:, 2] += x0 * s
+    verts = np.ascontiguousarray(verts[:, [2, 1, 0]])
 
     mesh = o3d.geometry.TriangleMesh()
     mesh.vertices = o3d.utility.Vector3dVector(verts.astype(np.float64, copy=False))
