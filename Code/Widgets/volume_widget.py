@@ -10,7 +10,7 @@ except ImportError:
 
 
 class VolumeRenderWidget(QWidget):
-    """Render uint8 XYZ volume previews using pyqtgraph's GLVolumeItem."""
+    """Unified pyqtgraph GL viewer for point clouds, meshes, and volume previews."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -20,6 +20,15 @@ class VolumeRenderWidget(QWidget):
 
         self._volume_item = None
         self._grid_item = None
+        self._axes_item = None
+        self._volume_loaded = False
+        self._volume_mode = False
+
+        self.point_clouds = {}
+        self.meshes = {}
+        self.show_pointcloud = True
+        self.show_mesh = False
+        self._overlay_text = ""
 
         if gl is None:
             label = QLabel(
@@ -38,11 +47,18 @@ class VolumeRenderWidget(QWidget):
 
         self._grid_item = gl.GLGridItem()
         self._view.addItem(self._grid_item)
-        self._view.addItem(gl.GLAxisItem())
+        self._axes_item = gl.GLAxisItem()
+        self._view.addItem(self._axes_item)
 
         empty = np.zeros((1, 1, 1, 4), dtype=np.ubyte)
         self._volume_item = gl.GLVolumeItem(empty)
         self._view.addItem(self._volume_item)
+        self._volume_item.setVisible(False)
+
+        self._overlay_label = QLabel(self)
+        self._overlay_label.setStyleSheet("color: white; background: transparent;")
+        self._overlay_label.move(10, 10)
+        self._overlay_label.hide()
 
     def is_available(self):
         return self._view is not None
@@ -67,6 +83,7 @@ class VolumeRenderWidget(QWidget):
             rgba[0, 0, :] = [0, 0, 255, 140]
 
         self._volume_item.setData(rgba)
+        self._volume_loaded = True
 
         max_dim = max(data.shape) if data.size else 1
         self._view.setCameraPosition(distance=max(25, max_dim * 2))
@@ -74,6 +91,127 @@ class VolumeRenderWidget(QWidget):
         if self._grid_item is not None:
             self._grid_item.resetTransform()
             self._grid_item.scale(max(data.shape[0], 1), max(data.shape[1], 1), 1)
+
+        self._apply_visibility()
+
+    def add_point_cloud(self, name, pcd, color=None):
+        if not self.is_available():
+            return
+
+        points = np.asarray(pcd.points, dtype=np.float32)
+        if points.size == 0:
+            return
+
+        if color is not None:
+            colors = np.full((len(points), 4), [color[0], color[1], color[2], 1.0], dtype=np.float32)
+        elif pcd.has_colors():
+            c = np.asarray(pcd.colors, dtype=np.float32)
+            colors = np.concatenate([c, np.ones((len(c), 1), dtype=np.float32)], axis=1)
+        else:
+            colors = np.ones((len(points), 4), dtype=np.float32)
+
+        item = gl.GLScatterPlotItem(pos=points, color=colors, size=1.5, pxMode=False)
+        self._view.addItem(item)
+        self.point_clouds[name] = {"points": points, "item": item}
+        self._apply_visibility()
+
+    def add_mesh(self, name, mesh, color=None):
+        if not self.is_available():
+            return
+
+        vertices = np.asarray(mesh.vertices, dtype=np.float32)
+        faces = np.asarray(mesh.triangles, dtype=np.int32)
+        if vertices.size == 0 or faces.size == 0:
+            return
+
+        mesh_data = gl.MeshData(vertexes=vertices, faces=faces)
+        rgba = (0.55, 0.75, 1.0, 1.0) if color is None else (color[0], color[1], color[2], 1.0)
+        item = gl.GLMeshItem(
+            meshdata=mesh_data,
+            smooth=True,
+            drawFaces=True,
+            drawEdges=False,
+            color=rgba,
+            shader="shaded",
+        )
+        self._view.addItem(item)
+        self.meshes[name] = {"vertices": vertices, "item": item}
+        self._apply_visibility()
+
+    def clear_point_clouds(self):
+        if not self.is_available():
+            self.point_clouds.clear()
+            return
+        for data in self.point_clouds.values():
+            self._view.removeItem(data["item"])
+        self.point_clouds.clear()
+
+    def clear_meshes(self):
+        if not self.is_available():
+            self.meshes.clear()
+            return
+        for data in self.meshes.values():
+            self._view.removeItem(data["item"])
+        self.meshes.clear()
+
+    def toggle_pointcloud_mesh_view(self):
+        self.show_pointcloud = not self.show_pointcloud
+        self.show_mesh = not self.show_mesh
+        self._apply_visibility()
+
+    def set_volume_mode(self, enabled):
+        self._volume_mode = bool(enabled)
+        self._apply_visibility()
+
+    def _apply_visibility(self):
+        if not self.is_available():
+            return
+
+        show_geom = not self._volume_mode
+        for data in self.point_clouds.values():
+            data["item"].setVisible(show_geom and self.show_pointcloud)
+        for data in self.meshes.values():
+            data["item"].setVisible(show_geom and self.show_mesh)
+
+        if self._volume_item is not None:
+            self._volume_item.setVisible(self._volume_mode and self._volume_loaded)
+
+    def get_scene_bounds(self):
+        blocks = [d["points"] for d in self.point_clouds.values() if len(d["points"]) > 0]
+        blocks += [d["vertices"] for d in self.meshes.values() if len(d["vertices"]) > 0]
+        if not blocks:
+            return None
+        pts = np.concatenate(blocks, axis=0)
+        minp = pts.min(axis=0)
+        maxp = pts.max(axis=0)
+        return (
+            (float(minp[0]), float(minp[1]), float(minp[2])),
+            (float(maxp[0]), float(maxp[1]), float(maxp[2])),
+        )
+
+    def get_camera_state(self):
+        if not self.is_available():
+            return None
+
+        distance = float(self._view.opts.get("distance", 200.0))
+        pitch = float(self._view.opts.get("elevation", 30.0))
+        azimuth = float(self._view.opts.get("azimuth", 45.0))
+        center = self._view.opts.get("center", QVector3D(0.0, 0.0, 0.0))
+        yaw = 90.0 - azimuth
+
+        return {
+            "distance": distance,
+            "pitch_deg": pitch,
+            "yaw_deg": yaw,
+            "origin_xyz": (float(center.x()), float(center.y()), float(center.z())),
+        }
+
+    def set_overlay_text(self, text: str):
+        self._overlay_text = text or ""
+        if not hasattr(self, "_overlay_label"):
+            return
+        self._overlay_label.setText(self._overlay_text)
+        self._overlay_label.setVisible(bool(self._overlay_text))
 
     def align_volume_to_world_bounds(self, volume_shape_xyz, bounds_min_xyz, bounds_max_xyz):
         """Scale/translate volume item so [0..Nx,0..Ny,0..Nz] maps into world bounds."""
@@ -108,3 +246,8 @@ class VolumeRenderWidget(QWidget):
 
         self._view.opts["center"] = QVector3D(float(origin[0]), float(origin[1]), float(origin[2]))
         self._view.setCameraPosition(distance=max(distance, 1.0), elevation=pitch, azimuth=azimuth)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_overlay_label"):
+            self._overlay_label.adjustSize()
