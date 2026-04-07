@@ -23,6 +23,7 @@ class ScanRecord:
     voxel_size_mm: float | None = None
     pcd: object | None = None
     mesh: object | None = None
+    volume_source: object | None = None
     tab: object | None = None
     is_result: bool = False
     metadata: dict = field(default_factory=dict)
@@ -270,6 +271,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         modality="scan",
         path="",
         voxel_size_mm=None,
+        volume_source=None,
         metadata=None,
         is_result=False,
         make_current=True,
@@ -278,6 +280,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         scan_id = str(uuid4())
         tab = ScanViewerTab(self.scanTabs)
         tab.set_info_text(self._build_info_text(name, modality, path, metadata))
+        tab.set_volume_source(volume_source)
         if pcd is not None:
             tab.set_point_clouds([(name, pcd, None)])
         
@@ -293,6 +296,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
             voxel_size_mm=voxel_size_mm,
             pcd=pcd,
             mesh=mesh,
+            volume_source=volume_source,
             tab=tab,
             is_result=is_result,
             metadata=dict(metadata),
@@ -305,7 +309,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self._sync_selection_ui()
         return scan_id
 
-    def update_scan_tab(self, scan_id, title=None, info_text=None, point_clouds=None, meshes=None):
+    def update_scan_tab(self, scan_id, title=None, info_text=None, point_clouds=None, meshes=None, volume_source=None):
         record = self.scans.get(scan_id)
         if record is None:
             return
@@ -321,6 +325,10 @@ class AppTest(QMainWindow, Ui_MainWindow):
 
         if meshes is not None:
             record.tab.set_meshes(meshes)
+
+        if volume_source is not None:
+            record.volume_source = volume_source
+            record.tab.set_volume_source(volume_source)
 
         index = self.scanTabs.indexOf(record.tab)
         if index >= 0:

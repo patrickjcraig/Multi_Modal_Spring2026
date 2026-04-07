@@ -1,5 +1,6 @@
 import os
 import re
+from dataclasses import dataclass
 import numpy as np
 import open3d as o3d
 
@@ -7,6 +8,17 @@ import tifffile as tiff
 import dask.array as da
 from dask import delayed
 from skimage.measure import marching_cubes
+
+
+@dataclass(frozen=True)
+class VolumeSource:
+    """Lightweight descriptor for lazily loading a TIFF stack volume preview."""
+
+    folder_path: str
+    voxel_size_mm: float | None = None
+    crop_zyx: tuple[int, int, int] | None = None
+    default_downsample_zyx: int = 4
+    max_preview_voxels: int = 8_000_000
 
 
 # use open3d to make some shapes.
@@ -53,6 +65,20 @@ def _make_lazy_volume_zyx(folder):
     return vol
 
 
+def inspect_tiff_stack(folder_path: str):
+    """Return shape/dtype metadata without loading the full TIFF stack."""
+    paths = _sorted_tiffs(folder_path)
+    if not paths:
+        raise FileNotFoundError("No tif/tiff files found in folder")
+
+    sample = _lazy_slice(paths[0])
+    return {
+        "shape_zyx": (len(paths), *sample.shape),
+        "dtype": str(sample.dtype),
+        "slice_count": len(paths),
+    }
+
+
 def _center_crop_bounds(shape_zyx, crop_zyx):
     Z, Y, X = shape_zyx
     cz, cy, cx = crop_zyx
@@ -65,6 +91,81 @@ def _center_crop_bounds(shape_zyx, crop_zyx):
     y1 = min(Y, y0 + cy)
     x1 = min(X, x0 + cx)
     return z0, z1, y0, y1, x0, x1
+
+
+def _normalize_volume_to_uint8(volume):
+    """Convert a preview volume to uint8 while avoiding full-stack assumptions."""
+    if volume.dtype == np.uint8:
+        return np.ascontiguousarray(volume)
+
+    if volume.size == 0:
+        return np.zeros(volume.shape, dtype=np.uint8)
+
+    lo, hi = np.percentile(volume, (1.0, 99.5))
+    if hi <= lo:
+        return np.zeros(volume.shape, dtype=np.uint8)
+
+    scaled = (volume.astype(np.float32, copy=False) - float(lo)) * (255.0 / float(hi - lo))
+    np.clip(scaled, 0.0, 255.0, out=scaled)
+    return np.ascontiguousarray(scaled.astype(np.uint8, copy=False))
+
+
+def load_ct_volume_preview(
+    folder_path: str,
+    downsample_zyx: int = 4,
+    crop_zyx: tuple[int, int, int] | None = (256, 256, 256),
+    max_preview_voxels: int = 8_000_000,
+):
+    """
+    Lazily load a GPU-friendly TIFF stack preview volume.
+
+    The returned array is uint8 and transposed to XYZ order for pyqtgraph's
+    GLVolumeItem.  Only the downsampled/cropped preview is computed.
+    """
+    downsample_zyx = max(1, int(downsample_zyx))
+    max_preview_voxels = max(1, int(max_preview_voxels))
+
+    vol = _make_lazy_volume_zyx(folder_path)
+    effective_downsample = downsample_zyx
+    vol_ds = vol[::effective_downsample, ::effective_downsample, ::effective_downsample]
+
+    if crop_zyx is not None:
+        z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, crop_zyx)
+        preview = vol_ds[z0:z1, y0:y1, x0:x1]
+    else:
+        z0, y0, x0 = 0, 0, 0
+        z1, y1, x1 = vol_ds.shape
+        preview = vol_ds
+
+    preview_voxels = int(np.prod(preview.shape))
+    if preview_voxels > max_preview_voxels:
+        guard_factor = int(np.ceil((preview_voxels / max_preview_voxels) ** (1.0 / 3.0)))
+        guard_factor = max(2, guard_factor)
+        effective_downsample *= guard_factor
+        vol_ds = vol[::effective_downsample, ::effective_downsample, ::effective_downsample]
+        if crop_zyx is not None:
+            guarded_crop = tuple(max(1, int(np.ceil(v / guard_factor))) for v in crop_zyx)
+            z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, guarded_crop)
+            preview = vol_ds[z0:z1, y0:y1, x0:x1]
+        else:
+            z0, y0, x0 = 0, 0, 0
+            z1, y1, x1 = vol_ds.shape
+            preview = vol_ds
+
+    sub_zyx = preview.compute()
+    sub_zyx = _normalize_volume_to_uint8(sub_zyx)
+    sub_xyz = np.ascontiguousarray(np.transpose(sub_zyx, (2, 1, 0)))
+
+    metadata = {
+        "shape_zyx": tuple(int(v) for v in vol.shape),
+        "preview_shape_xyz": tuple(int(v) for v in sub_xyz.shape),
+        "dtype": str(vol.dtype),
+        "downsample_zyx": effective_downsample,
+        "crop_origin_zyx": (int(z0), int(y0), int(x0)),
+        "crop_shape_zyx": (int(z1 - z0), int(y1 - y0), int(x1 - x0)),
+        "preview_voxels": int(sub_xyz.size),
+    }
+    return sub_xyz, metadata
 
 
 def get_mesh_from_ct_stack(

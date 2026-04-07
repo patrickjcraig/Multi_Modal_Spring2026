@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from PySide6.QtWidgets import QMessageBox
-from makeGeometry import get_pcd_from_ct_stack
+from makeGeometry import VolumeSource, get_pcd_from_ct_stack, inspect_tiff_stack
 from GUI.dialogs.xray_import_dialog import XRayImportDialog
 
 
@@ -45,6 +45,12 @@ class ImportController:
                 level=None,
                 n_points=5000,
             )
+            volume_source = VolumeSource(
+                folder_path=demo_folder,
+                voxel_size_mm=None,
+                crop_zyx=(256, 256, 256),
+                default_downsample_zyx=4,
+            )
 
             print("MC level:", level)
             print("PCD points:", np.asarray(pcd.points).shape[0])
@@ -55,7 +61,12 @@ class ImportController:
                 mesh=mesh,
                 modality="ct-demo",
                 path=demo_folder,
-                metadata={"Points": np.asarray(pcd.points).shape[0], "MC level": level},
+                volume_source=volume_source,
+                metadata={
+                    "Points": np.asarray(pcd.points).shape[0],
+                    "MC level": level,
+                    "3D volume": "lazy preview available",
+                },
             )
             if mw.source_scan_id is None:
                 mw.source_scan_id = scan_id
@@ -115,6 +126,7 @@ class ImportController:
             mw.statusbar.showMessage("Loading TIFF stack...")
 
             crop_zyx = (roi_xyz[2], roi_xyz[1], roi_xyz[0])
+            stack_info = inspect_tiff_stack(folder_path)
 
             pcd, mesh, level = get_pcd_from_ct_stack(
                 folder_path=folder_path,
@@ -122,6 +134,12 @@ class ImportController:
                 crop_zyx=crop_zyx,
                 level=level,
                 n_points=pcd_points,
+            )
+            volume_source = VolumeSource(
+                folder_path=folder_path,
+                voxel_size_mm=voxel_size_mm,
+                crop_zyx=crop_zyx,
+                default_downsample_zyx=downsampling,
             )
 
             print("Imported TIFF stack from:", folder_path)
@@ -145,7 +163,11 @@ class ImportController:
                     "Downsampling": downsampling,
                     "Points": pcd_points,
                     "MC level": level,
+                    "Stack shape ZYX": stack_info["shape_zyx"],
+                    "Stack dtype": stack_info["dtype"],
+                    "3D volume": "lazy preview available",
                 },
+                volume_source=volume_source,
             )
             if mw.source_scan_id is None:
                 mw.source_scan_id = scan_id

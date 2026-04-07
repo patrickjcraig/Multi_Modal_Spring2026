@@ -27,7 +27,7 @@ uniform vec3 meshColor;
 void main() {
     // Simple Phong-like lighting
     vec3 normal = normalize(fragNormal);
-    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+    vec3 lightDir = normalize(vec3(1.0, -1.0, 1.0));
     
     float ambientStrength = 0.3;
     float diffuseStrength = max(dot(normal, lightDir), 0.0);

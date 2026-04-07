@@ -21,7 +21,7 @@ class PointCloudWidget(QOpenGLWidget):
     OpenGL widget for rendering point clouds and meshes from open3d.
     Supports multiple point clouds and meshes with different colors and transformations.
 
-    Toggle between point cloud and mesh visibility using Ctrl+T.
+    Toggle between point cloud and mesh visibility using Ctrl+M from ScanViewerTab.
     The widget can optionally display overlay text (e.g. "RANSAC 5/100")
     in the top‑left corner; the text is set with :meth:`set_overlay_text`.
     """
@@ -40,6 +40,7 @@ class PointCloudWidget(QOpenGLWidget):
         self.camera_angle_x = 30.0
         self.camera_angle_y = 45.0
         self.rotation_origin = glm.vec3(0.0, 0.0, 0.0) if glm else None
+        self.world_up = glm.vec3(0.0, 0.0, 1.0) if glm else None
 
         # Grid state
         self.grid_vao = None
@@ -60,6 +61,17 @@ class PointCloudWidget(QOpenGLWidget):
         self.mesh_opacity = 0.0
         self.show_pointcloud = True
         self.show_mesh = False
+
+        # Match the xrayrecon/pyqtgraph volume scene so toggling views feels
+        # continuous: dark background, muted grid, and bright RGB axes.
+        self.background_color = (0.0, 0.0, 0.0, 1.0)
+        self.grid_color = (0.32, 0.32, 0.32)
+        self.grid_major_color = (0.48, 0.48, 0.48)
+        self.axis_colors = {
+            "x": (1.0, 0.0, 0.0),
+            "y": (0.0, 1.0, 0.0),
+            "z": (0.0, 0.0, 1.0),
+        }
 
     def add_point_cloud(self, name, pcd, color=None):
         """
@@ -123,7 +135,7 @@ class PointCloudWidget(QOpenGLWidget):
             'vbo_normals': None,
             'ibo': None,
             'index_count': len(triangles) * 3,
-            'color': color if color is not None else (0.3, 0.5, 0.9)
+            'color': color if color is not None else (0.55, 0.75, 1.0)
         }
 
         self.grid_dirty = True
@@ -155,9 +167,18 @@ class PointCloudWidget(QOpenGLWidget):
         
         self.update()
 
+    def _camera_position(self):
+        """Return camera position using pyqtgraph/xrayrecon-style z-up axes."""
+        pitch = math.radians(self.camera_angle_x)
+        yaw = math.radians(self.camera_angle_y)
+        camera_x = self.camera_distance * math.sin(yaw) * math.cos(pitch)
+        camera_y = self.camera_distance * math.cos(yaw) * math.cos(pitch)
+        camera_z = self.camera_distance * math.sin(pitch)
+        return self.rotation_origin + glm.vec3(camera_x, camera_y, camera_z)
+
     def initializeGL(self):
         """Initialize OpenGL context and shaders."""
-        gl.glClearColor(0.2, 0.2, 0.2, 1.0)
+        gl.glClearColor(*self.background_color)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glEnable(gl.GL_MULTISAMPLE)
         gl.glPointSize(2.0)
@@ -316,16 +337,12 @@ class PointCloudWidget(QOpenGLWidget):
         aspect = self.width() / max(self.height(), 1)
         projection = glm.perspective(glm.radians(45.0), aspect, 0.1, 10000.0)
 
-        # Setup view matrix with camera controls (shared by both shaders)
-        camera_x = self.camera_distance * math.sin(math.radians(self.camera_angle_y)) * math.cos(math.radians(self.camera_angle_x))
-        camera_y = self.camera_distance * math.sin(math.radians(self.camera_angle_x))
-        camera_z = self.camera_distance * math.cos(math.radians(self.camera_angle_y)) * math.cos(math.radians(self.camera_angle_x))
-
-        camera_pos = self.rotation_origin + glm.vec3(camera_x, camera_y, camera_z)
+        # Setup view matrix with z-up camera controls to match pyqtgraph/xrayrecon.
+        camera_pos = self._camera_position()
         view = glm.lookAt(
             camera_pos,
             self.rotation_origin,
-            glm.vec3(0.0, 1.0, 0.0)
+            self.world_up
         )
         self.view = view
         self.projection = projection
@@ -389,7 +406,7 @@ class PointCloudWidget(QOpenGLWidget):
         if not self.grid_dirty:
             return
 
-        # Collect points from both point clouds and meshes for grid sizing
+        # Collect points from both point clouds and meshes for grid sizing.
         pc_points = np.concatenate([d['points'] for d in self.point_clouds.values() if len(d['points']) > 0], axis=0) if self.point_clouds else np.zeros((0,3), np.float32)
         mesh_points = np.concatenate([d['vertices'] for d in self.meshes.values() if len(d['vertices']) > 0], axis=0) if self.meshes else np.zeros((0,3), np.float32)
         points = np.concatenate([pc_points, mesh_points], axis=0) if (pc_points.shape[0] > 0 or mesh_points.shape[0] > 0) else np.zeros((0,3), np.float32)
@@ -397,21 +414,33 @@ class PointCloudWidget(QOpenGLWidget):
         if points.shape[0] > 0:
             minp = points.min(axis=0)
             maxp = points.max(axis=0)
-            scene_size = float(np.linalg.norm(maxp - minp))
+            scene_size = float(max(np.max(maxp - minp), 1.0))
         else:
             scene_size = 100.0
         scene_size = max(scene_size, 20.0)
 
-        axis_extent = scene_size * 1.2
+        axis_extent = scene_size * 0.75
+        grid_extent = axis_extent
         tick_step = max(1.0, scene_size / 10.0)
         tick_size = axis_extent * 0.02
 
         lines = []
         colors = []
 
-        axis_color_x = [1.0, 0.0, 0.0]
-        axis_color_y = [0.0, 1.0, 0.0]
-        axis_color_z = [0.0, 0.0, 1.0]
+        axis_color_x = list(self.axis_colors["x"])
+        axis_color_y = list(self.axis_colors["y"])
+        axis_color_z = list(self.axis_colors["z"])
+        grid_color = list(self.grid_color)
+        grid_major_color = list(self.grid_major_color)
+
+        # Pyqtgraph-like XY floor grid at Z=0.
+        for i in np.arange(-grid_extent, grid_extent + 0.0001, tick_step):
+            major = abs(i) < 1e-6
+            color = grid_major_color if major else grid_color
+            lines.extend([[-grid_extent, i, 0.0], [grid_extent, i, 0.0]])
+            colors.extend([color, color])
+            lines.extend([[i, -grid_extent, 0.0], [i, grid_extent, 0.0]])
+            colors.extend([color, color])
 
         # Axis lines
         lines.extend([[-axis_extent, 0.0, 0.0], [axis_extent, 0.0, 0.0]])
@@ -508,20 +537,19 @@ class PointCloudWidget(QOpenGLWidget):
         elif event.buttons() == Qt.RightButton:
             # Move rotation origin in view plane
             if glm is not None:
-                # Compute current camera position
-                camera_x = self.camera_distance * math.sin(math.radians(self.camera_angle_y)) * math.cos(math.radians(self.camera_angle_x))
-                camera_y = self.camera_distance * math.sin(math.radians(self.camera_angle_x))
-                camera_z = self.camera_distance * math.cos(math.radians(self.camera_angle_y)) * math.cos(math.radians(self.camera_angle_x))
-                camera_pos = self.rotation_origin + glm.vec3(camera_x, camera_y, camera_z)
+                camera_pos = self._camera_position()
                 
                 # View direction from camera to rotation origin
                 view_dir = glm.normalize(self.rotation_origin - camera_pos)
                 
                 # Right vector (perpendicular to view and world up)
-                right = glm.normalize(glm.cross(view_dir, glm.vec3(0.0, 1.0, 0.0)))
+                right = glm.cross(view_dir, self.world_up)
+                if glm.length(right) < 1e-6:
+                    right = glm.vec3(1.0, 0.0, 0.0)
+                right = glm.normalize(right)
                 
                 # Up vector in view plane
-                up = glm.cross(right, view_dir)
+                up = glm.normalize(glm.cross(right, view_dir))
                 
                 # Move rotation origin in view plane
                 movement = delta_x * right * 0.5 - delta_y * up * 0.5  # Note: -delta_y because screen Y is inverted
