@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from PySide6.QtWidgets import QMessageBox
-from makeGeometry import get_pcd_from_ct_stack
+from makeGeometry import get_mesh_from_ct_stack
 from GUI.dialogs.xray_import_dialog import XRayImportDialog
 
 
@@ -38,13 +38,13 @@ class ImportController:
                 os.path.join(os.path.dirname(__file__), '..', '..', '120kv_FDK')
             )
 
-            pcd, mesh, level = get_pcd_from_ct_stack(
+            mesh, level = get_mesh_from_ct_stack(
                 folder_path=demo_folder,
                 downsample_zyx=4,
                 crop_zyx=(256, 256, 256),
                 level=None,
-                n_points=5000,
             )
+            pcd = mesh.sample_points_poisson_disk(number_of_points=5000)
 
             print("MC level:", level)
             print("PCD points:", np.asarray(pcd.points).shape[0])
@@ -55,7 +55,11 @@ class ImportController:
                 mesh=mesh,
                 modality="ct-demo",
                 path=demo_folder,
-                metadata={"Points": np.asarray(pcd.points).shape[0], "MC level": level},
+                metadata={
+                    "Points": np.asarray(pcd.points).shape[0],
+                    "Mesh source": "CT stack marching cubes",
+                    "MC level": level,
+                },
             )
             if mw.source_scan_id is None:
                 mw.source_scan_id = scan_id
@@ -116,13 +120,14 @@ class ImportController:
 
             crop_zyx = (roi_xyz[2], roi_xyz[1], roi_xyz[0])
 
-            pcd, mesh, level = get_pcd_from_ct_stack(
+            mesh, level = get_mesh_from_ct_stack(
                 folder_path=folder_path,
+                voxel_size_mm=voxel_size_mm,
                 downsample_zyx=downsampling,
                 crop_zyx=crop_zyx,
                 level=level,
-                n_points=pcd_points,
             )
+            pcd = mesh.sample_points_poisson_disk(number_of_points=pcd_points)
 
             print("Imported TIFF stack from:", folder_path)
             print("Voxel size (mm):", voxel_size_mm)
@@ -144,6 +149,7 @@ class ImportController:
                     "ROI XYZ": roi_xyz,
                     "Downsampling": downsampling,
                     "Points": pcd_points,
+                    "Mesh source": "CT stack marching cubes",
                     "MC level": level,
                 },
             )
