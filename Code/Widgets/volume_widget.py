@@ -1,5 +1,6 @@
 import numpy as np
 
+from PySide6.QtGui import QVector3D
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 try:
@@ -73,3 +74,37 @@ class VolumeRenderWidget(QWidget):
         if self._grid_item is not None:
             self._grid_item.resetTransform()
             self._grid_item.scale(max(data.shape[0], 1), max(data.shape[1], 1), 1)
+
+    def align_volume_to_world_bounds(self, volume_shape_xyz, bounds_min_xyz, bounds_max_xyz):
+        """Scale/translate volume item so [0..Nx,0..Ny,0..Nz] maps into world bounds."""
+        if not self.is_available() or self._volume_item is None:
+            return
+
+        nx, ny, nz = [max(int(v), 1) for v in volume_shape_xyz]
+        minx, miny, minz = [float(v) for v in bounds_min_xyz]
+        maxx, maxy, maxz = [float(v) for v in bounds_max_xyz]
+
+        sx = (maxx - minx) / float(max(nx - 1, 1))
+        sy = (maxy - miny) / float(max(ny - 1, 1))
+        sz = (maxz - minz) / float(max(nz - 1, 1))
+
+        self._volume_item.resetTransform()
+        # Translate first so translation is not scaled by the subsequent scale.
+        self._volume_item.translate(minx, miny, minz)
+        self._volume_item.scale(sx, sy, sz)
+
+    def set_camera_from_geometry_state(self, camera_state):
+        """Apply geometry viewer camera state to the pyqtgraph camera."""
+        if not self.is_available() or camera_state is None:
+            return
+
+        distance = float(camera_state.get("distance", 200.0))
+        pitch = float(camera_state.get("pitch_deg", 30.0))
+        yaw = float(camera_state.get("yaw_deg", 45.0))
+        origin = camera_state.get("origin_xyz", (0.0, 0.0, 0.0))
+
+        # PointCloudWidget yaw 0deg looks along +Y. pyqtgraph azimuth 0deg looks along +X.
+        azimuth = 90.0 - yaw
+
+        self._view.opts["center"] = QVector3D(float(origin[0]), float(origin[1]), float(origin[2]))
+        self._view.setCameraPosition(distance=max(distance, 1.0), elevation=pitch, azimuth=azimuth)

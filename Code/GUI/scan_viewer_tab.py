@@ -49,6 +49,7 @@ class ScanViewerTab(QWidget):
         self.volume_source = None
         self._volume_loaded = False
         self._volume_worker = None
+        self._last_volume_shape_xyz = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -122,6 +123,7 @@ class ScanViewerTab(QWidget):
     def set_volume_source(self, volume_source):
         self.volume_source = volume_source
         self._volume_loaded = False
+        self._last_volume_shape_xyz = None
         has_source = volume_source is not None
         self.btn_toggle_volume.setEnabled(has_source)
         self.spin_volume_downsample.setEnabled(has_source)
@@ -146,6 +148,7 @@ class ScanViewerTab(QWidget):
             return
 
         if self._volume_loaded:
+            self._sync_volume_view_from_geometry()
             self.view_stack.setCurrentWidget(self.volume_viewer)
             self.btn_toggle_volume.setText("Show Geometry")
         else:
@@ -188,6 +191,8 @@ class ScanViewerTab(QWidget):
 
     def _on_volume_loaded(self, volume, metadata, show_after_load):
         self.volume_viewer.set_volume(volume)
+        self._last_volume_shape_xyz = tuple(int(v) for v in volume.shape)
+        self._sync_volume_view_from_geometry(volume_shape_xyz=volume.shape)
         self._volume_loaded = True
 
         if show_after_load:
@@ -203,6 +208,29 @@ class ScanViewerTab(QWidget):
             f"downsample {metadata['downsample_zyx']}"
         )
         self._volume_worker = None
+
+    def _sync_volume_view_from_geometry(self, volume_shape_xyz=None):
+        """Keep volume preview in the same coordinate frame and view as geometry."""
+        if not self.volume_viewer.is_available():
+            return
+
+        camera_state = self.viewer.get_camera_state()
+        self.volume_viewer.set_camera_from_geometry_state(camera_state)
+
+        bounds = self.viewer.get_scene_bounds()
+        if bounds is None:
+            return
+
+        if volume_shape_xyz is None:
+            if self._last_volume_shape_xyz is None:
+                return
+            volume_shape_xyz = self._last_volume_shape_xyz
+
+        self.volume_viewer.align_volume_to_world_bounds(
+            volume_shape_xyz=volume_shape_xyz,
+            bounds_min_xyz=bounds[0],
+            bounds_max_xyz=bounds[1],
+        )
 
     def _on_volume_error(self, message):
         self.btn_toggle_volume.setEnabled(self.volume_source is not None)

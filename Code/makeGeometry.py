@@ -170,7 +170,7 @@ def load_ct_volume_preview(
 
 def get_mesh_from_ct_stack(
     folder_path: str,
-    voxel_size_mm: float = 0.006937965888099794,  
+    voxel_size_mm: float = 0.006937965888099794,
     downsample_zyx: int = 2,                      
     crop_zyx: tuple[int, int, int] = (256, 256, 256),
     level: float | None = None,
