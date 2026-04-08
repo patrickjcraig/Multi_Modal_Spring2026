@@ -1,0 +1,436 @@
+import copy
+import os
+import numpy as np
+from PySide6.QtCore import QObject
+
+from GUI.icp_worker import ICPWorkerThread
+from Utils.dataframe_utils import pcd_to_df, tf_to_df, reg_to_df
+
+
+class RegistrationController(QObject):
+    """Encapsulate all of the registration-related logic and UI updates.
+
+    The controller holds the point cloud state and history as well as the
+    callbacks that were previously implemented directly in
+    ``main_window.AppTest``.  By moving the functionality here we keep the
+    main window class focused on wiring widgets together and leave the heavy
+    lifting in a smaller, testable helper object.
+    """
+
+    def __init__(self, main_window):
+        super().__init__()
+        self.main = main_window
+
+        self.reset_state()
+
+    def reset_state(self):
+        # state owned by the controller
+        self.step_history = []
+        self.current_step = 0
+        self.icp_thread = None
+        self.result_scan_id = None
+        self.source_scan = None
+        self.target_scan = None
+        self.global_transform_model = "rigid"
+        self.global_stage_name = "Global RANSAC"
+        self.local_stage_name = "Local ICP"
+
+    # ------------------------------------------------------------------
+    # Public methods hooked to UI signals
+    # ------------------------------------------------------------------
+
+    def run_scan(self):
+        """Start a registration run using values from the UI."""
+        mw = self.main
+        self.source_scan, self.target_scan = mw.get_registration_pair()
+
+        if self.source_scan is None or self.target_scan is None:
+            mw.statusbar.showMessage("Choose a source and target tab before running registration.")
+            return
+
+        if self.source_scan.scan_id == self.target_scan.scan_id:
+            mw.statusbar.showMessage("Source and target scans must be different tabs.")
+            return
+
+        if self.source_scan.pcd is None or self.target_scan.pcd is None:
+            mw.statusbar.showMessage("Both selected scans need point cloud data.")
+            return
+
+        mw.toolButton.setEnabled(False)
+        mw.progressBar.setValue(0)
+
+        # reset history and UI state
+        self.step_history = []
+        self.current_step = 0
+        mw.btn_prev_step.setEnabled(False)
+        mw.btn_next_step.setEnabled(False)
+
+        # Clear previous results
+        mw.label_ransac_fitness.setText("--")
+        mw.label_ransac_rmse.setText("--")
+        mw.label_icp_fitness.setText("--")
+        mw.label_icp_rmse.setText("--")
+
+        voxel_size = mw.spinBox_voxel_size.value()
+        ransac_dist_mult = mw.spinBox_ransac_dist.value()
+        ransac_max_iter = mw.spinBox_ransac_max_iter.value()
+        ransac_validation = mw.spinBox_ransac_validation.value()
+        icp_dist_mult = mw.spinBox_icp_dist.value()
+        self.global_transform_model = mw.combo_global_transform_model.currentData() or "rigid"
+        if self.global_transform_model == "similarity":
+            mw.label_ransac_rmse_label.setText("Inlier RMSE / Scale:")
+        else:
+            mw.label_ransac_rmse_label.setText("Inlier RMSE:")
+        mw.statusbar.showMessage(
+            f"Running {self._describe_global_stage()} -> {self.local_stage_name}: "
+            f"{self.source_scan.name} -> {self.target_scan.name}"
+        )
+
+        self.result_scan_id = mw.add_scan_tab(
+            name=f"Registration {self.source_scan.name} -> {self.target_scan.name}",
+            modality="registration-result",
+            is_result=True,
+            metadata={
+                "Source": self.source_scan.name,
+                "Target": self.target_scan.name,
+                "Global stage": self._describe_global_stage(),
+                "Local stage": self.local_stage_name,
+            },
+        )
+
+        self.icp_thread = ICPWorkerThread(
+            voxel_size=voxel_size,
+            ransac_dist_mult=ransac_dist_mult,
+            ransac_max_iter=ransac_max_iter,
+            ransac_validation=ransac_validation,
+            icp_dist_mult=icp_dist_mult,
+            source_pcd=self.source_scan.pcd,
+            target_pcd=self.target_scan.pcd,
+            global_transform_model=self.global_transform_model,
+        )
+        self.icp_thread.step.connect(self._on_registration_step)
+        self.icp_thread.finished.connect(self._on_registration_complete)
+        self.icp_thread.error.connect(self._on_registration_error)
+        self.icp_thread.start()
+
+    def suggest_ransac_parameters(self, source_scan=None, target_scan=None, global_transform_model=None):
+        """Suggest registration parameters from imported scan metadata."""
+        mw = self.main
+        source_scan = source_scan or self.source_scan or mw.scans.get(mw.source_scan_id)
+        target_scan = target_scan or self.target_scan or mw.scans.get(mw.target_scan_id)
+        global_transform_model = global_transform_model or (mw.combo_global_transform_model.currentData() or "rigid")
+
+        scans = [scan for scan in (source_scan, target_scan) if scan is not None]
+        effective_spacings = []
+        point_counts = []
+        for scan in scans:
+            spacing = self._effective_spacing_mm(scan)
+            if spacing is not None:
+                effective_spacings.append(spacing)
+
+            if scan.pcd is not None:
+                point_counts.append(len(np.asarray(scan.pcd.points)))
+            else:
+                point_count = scan.metadata.get("Points") if scan.metadata else None
+                if point_count is not None:
+                    point_counts.append(int(point_count))
+
+        if effective_spacings:
+            voxel_size = max(effective_spacings)
+        else:
+            voxel_size = mw.spinBox_voxel_size.value()
+
+        max_point_count = max(point_counts, default=5000)
+        dist_multiplier = 1.5
+        max_iterations = 100000
+
+        if max_point_count >= 50000:
+            max_iterations = 300000
+        elif max_point_count >= 20000:
+            max_iterations = 200000
+        elif max_point_count >= 5000:
+            max_iterations = 150000
+
+        if global_transform_model == "similarity":
+            dist_multiplier = 2.0
+            max_iterations = int(max_iterations * 2.0)
+
+        if len(effective_spacings) == 2:
+            spacing_ratio = max(effective_spacings) / max(min(effective_spacings), 1e-9)
+            if spacing_ratio > 1.25:
+                dist_multiplier += 0.2
+                max_iterations = int(max_iterations * 1.5)
+
+        validation_iterations = max(1000, int(max_iterations * 0.02))
+        validation_iterations = min(validation_iterations, 100000)
+
+        voxel_size = float(np.clip(voxel_size, mw.spinBox_voxel_size.minimum(), mw.spinBox_voxel_size.maximum()))
+        dist_multiplier = float(np.clip(dist_multiplier, mw.spinBox_ransac_dist.minimum(), mw.spinBox_ransac_dist.maximum()))
+        max_iterations = int(np.clip(max_iterations, mw.spinBox_ransac_max_iter.minimum(), mw.spinBox_ransac_max_iter.maximum()))
+        validation_iterations = int(np.clip(validation_iterations, mw.spinBox_ransac_validation.minimum(), mw.spinBox_ransac_validation.maximum()))
+
+        return {
+            "voxel_size": voxel_size,
+            "ransac_dist_multiplier": dist_multiplier,
+            "ransac_max_iter": max_iterations,
+            "ransac_validation": validation_iterations,
+        }
+
+    def apply_suggested_ransac_parameters(self, source_scan=None, target_scan=None, show_status=False):
+        suggestions = self.suggest_ransac_parameters(source_scan=source_scan, target_scan=target_scan)
+        mw = self.main
+        mw.spinBox_voxel_size.setValue(suggestions["voxel_size"])
+        mw.spinBox_ransac_dist.setValue(suggestions["ransac_dist_multiplier"])
+        mw.spinBox_ransac_max_iter.setValue(suggestions["ransac_max_iter"])
+        mw.spinBox_ransac_validation.setValue(suggestions["ransac_validation"])
+
+        if show_status:
+            mw.statusbar.showMessage(
+                "Suggested registration parameters updated from scan spacing and RANSAC mode."
+            )
+
+    def prev_step(self):
+        """Go back one entry in the history."""
+        if self.current_step > 0:
+            self.current_step -= 1
+            self._display_registration_results()
+            mw = self.main
+            mw.btn_next_step.setEnabled(True)
+            if self.current_step == 0:
+                mw.btn_prev_step.setEnabled(False)
+
+    def next_step(self):
+        """Advance one entry in the history."""
+        if self.current_step < len(self.step_history) - 1:
+            self.current_step += 1
+            self._display_registration_results()
+            mw = self.main
+            mw.btn_prev_step.setEnabled(True)
+            if self.current_step == len(self.step_history) - 1:
+                mw.btn_next_step.setEnabled(False)
+
+    def save_dataframes(self):
+        """Export the current data and results to CSV files."""
+        mw = self.main
+        if not hasattr(self, 'pcd1'):
+            mw.statusbar.showMessage('No valid data is available.')
+            return
+
+        pcd1_df = pcd_to_df(self.pcd1)
+        pcd2_df = pcd_to_df(self.pcd2)
+
+        if getattr(self, 'icp_result', None) is not None:
+            icp_tf_df = tf_to_df(self.icp_result)
+            icp_df = reg_to_df(self.icp_result)
+        else:
+            import pandas as _pd
+            icp_tf_df = _pd.DataFrame()
+            icp_df = _pd.DataFrame()
+
+        if getattr(self, 'ransac_result', None) is not None:
+            ransac_tf_df = tf_to_df(self.ransac_result)
+            ransac_df = reg_to_df(self.ransac_result)
+        else:
+            import pandas as _pd
+            ransac_tf_df = _pd.DataFrame()
+            ransac_df = _pd.DataFrame()
+
+        code_dir = os.path.dirname(os.path.abspath(__file__))
+        ws_dir = os.path.dirname(code_dir)
+        base = os.path.join(ws_dir, 'TestData')
+        os.makedirs(base, exist_ok=True)
+
+        pcd1_df.to_csv(os.path.join(base, 'pcd1_raw.csv'), index=False)
+        pcd2_df.to_csv(os.path.join(base, 'pcd2_raw.csv'), index=False)
+        icp_tf_df.to_csv(os.path.join(base, 'icp_transform.csv'), index=False)
+        icp_df.to_csv(os.path.join(base, 'icp_metadata.csv'), index=False)
+        ransac_tf_df.to_csv(os.path.join(base, 'ransac_transform.csv'), index=False)
+        ransac_df.to_csv(os.path.join(base, 'ransac_metadata.csv'), index=False)
+
+        mw.statusbar.showMessage('The data has been saved successfully.')
+
+    # ------------------------------------------------------------------
+    # Internal callbacks and helpers
+    # ------------------------------------------------------------------
+
+    def _on_registration_complete(self, results):
+        mw = self.main
+        self.pcd1 = results.get('pcd1', getattr(self, 'pcd1', None))
+        self.pcd2 = results.get('pcd2', getattr(self, 'pcd2', None))
+        if results.get('ransac') is not None:
+            self.ransac_result = results['ransac']
+        if results.get('icp') is not None:
+            self.icp_result = results['icp']
+        self.global_transform_model = results.get("global_transform_model", self.global_transform_model)
+
+        self._update_results_display()
+
+        if self.step_history:
+            self.current_step = len(self.step_history) - 1
+        else:
+            self.current_step = 0
+        self._display_registration_results()
+
+        mw.btn_prev_step.setEnabled(self.current_step > 0)
+        mw.btn_next_step.setEnabled(False)
+
+        mw.progressBar.setValue(100)
+        if getattr(self, 'icp_result', None) is not None:
+            mw.statusbar.showMessage(
+                '{} complete! Fitness: {:.6f}, RMSE: {:.6f}'.format(
+                    self.local_stage_name,
+                    self.icp_result.fitness, self.icp_result.inlier_rmse))
+        else:
+            mw.statusbar.showMessage('Registration complete!')
+
+        mw.toolButton.setEnabled(True)
+
+    def _update_results_display(self):
+        mw = self.main
+        if hasattr(self, 'ransac_result') and self.ransac_result is not None:
+            mw.label_ransac_fitness.setText(f"{self.ransac_result.fitness:.6f}")
+            details = [f"RMSE: {self.ransac_result.inlier_rmse:.6f}"]
+            scale = self._extract_uniform_scale(self.ransac_result.transformation)
+            if self.global_transform_model == "similarity":
+                details.append(f"Scale: {scale:.6f}")
+            mw.label_ransac_rmse.setText(" | ".join(details))
+        else:
+            mw.label_ransac_fitness.setText("--")
+            mw.label_ransac_rmse.setText("--")
+
+        if hasattr(self, 'icp_result') and self.icp_result is not None:
+            mw.label_icp_fitness.setText(f"{self.icp_result.fitness:.6f}")
+            mw.label_icp_rmse.setText(f"{self.icp_result.inlier_rmse:.6f}")
+        else:
+            mw.label_icp_fitness.setText("--")
+            mw.label_icp_rmse.setText("--")
+
+    def _on_registration_error(self, error_msg):
+        mw = self.main
+        mw.statusbar.showMessage(f'Error during registration: {error_msg}')
+        mw.toolButton.setEnabled(True)
+
+    def _on_registration_step(self, stage, iteration, data):
+        mw = self.main
+        self.step_history.append((stage, iteration, data))
+        self.current_step = len(self.step_history) - 1
+
+        if stage == 0:
+            self.pcd1 = data.get("pcd1")
+            self.pcd2 = data.get("pcd2")
+        elif stage == 1:
+            self.ransac_result = data.get("ransac")
+        elif stage == 2:
+            self.icp_result = data.get("icp")
+
+        self._display_registration_results()
+        if 'ransac' in data or 'icp' in data:
+            self._update_results_display()
+
+        total = data.get('total', 1)
+        if stage == 0:
+            mw.progressBar.setValue(0)
+            mw.statusbar.showMessage("Loaded point clouds")
+            overlay = ""
+        elif stage == 1:
+            pct = int(iteration / total * 100) if total else 0
+            mw.progressBar.setValue(pct)
+            mw.statusbar.showMessage(f"{self.global_stage_name} {iteration}/{total}")
+            overlay = f"{self.global_stage_name} {iteration}/{total}"
+        elif stage == 2:
+            pct = int(iteration / total * 100) if total else 0
+            mw.progressBar.setValue(pct)
+            mw.statusbar.showMessage(f"{self.local_stage_name} {iteration}/{total}")
+            overlay = f"{self.local_stage_name} {iteration}/{total}"
+        record = mw.scans.get(self.result_scan_id)
+        if record is not None:
+            record.tab.viewer.set_overlay_text(overlay)
+
+        mw.btn_prev_step.setEnabled(self.current_step > 0)
+        mw.btn_next_step.setEnabled(self.current_step < len(self.step_history) - 1)
+
+    def _display_registration_results(self):
+        mw = self.main
+        source_temp = copy.deepcopy(self.pcd1)
+        target_temp = copy.deepcopy(self.pcd2)
+        source_temp.paint_uniform_color([1.0, 0.706, 0.0])
+        target_temp.paint_uniform_color([0.0, 0.651, 0.929])
+
+        source_mesh_temp = copy.deepcopy(self.source_scan.mesh) if self.source_scan and self.source_scan.mesh is not None else None
+        target_mesh_temp = copy.deepcopy(self.target_scan.mesh) if self.target_scan and self.target_scan.mesh is not None else None
+
+        if self.step_history:
+            stage, iteration, payload = self.step_history[self.current_step]
+        else:
+            stage, iteration, payload = 0, 0, {}
+
+        if stage == 0:
+            mw.label_step_info.setText("Raw point clouds")
+        elif stage == 1:
+            trans = payload.get('ransac').transformation if payload.get('ransac') else None
+            if trans is not None:
+                source_temp.transform(trans)
+                if source_mesh_temp is not None:
+                    source_mesh_temp.transform(trans)
+            total = payload.get('total', '?')
+            mw.label_step_info.setText(f"{self._describe_global_stage()} {iteration}/{total}")
+        elif stage == 2:
+            trans = payload.get('icp').transformation if payload.get('icp') else None
+            if trans is not None:
+                source_temp.transform(trans)
+                if source_mesh_temp is not None:
+                    source_mesh_temp.transform(trans)
+            total = payload.get('total', '?')
+            mw.label_step_info.setText(f"{self.local_stage_name} {iteration}/{total}")
+
+        meshes = []
+        if source_mesh_temp is not None:
+            meshes.append(("Source Mesh", source_mesh_temp, (1.0, 0.706, 0.0)))
+        if target_mesh_temp is not None:
+            meshes.append(("Target Mesh", target_mesh_temp, (0.0, 0.651, 0.929)))
+
+        info_text = " | ".join([
+            f"Registration result",
+            f"Source: {self.source_scan.name if self.source_scan else 'Unknown'}",
+            f"Target: {self.target_scan.name if self.target_scan else 'Unknown'}",
+            f"Global: {self._describe_global_stage()}",
+            f"Local: {self.local_stage_name}",
+            f"Stage: {mw.label_step_info.text()}",
+        ])
+        if stage == 1 and payload.get("ransac") is not None and self.global_transform_model == "similarity":
+            info_text += f" | Global scale: {self._extract_uniform_scale(payload['ransac'].transformation):.6f}"
+        elif stage == 2 and payload.get("icp") is not None and self.global_transform_model == "similarity":
+            info_text += f" | Current scale: {self._extract_uniform_scale(payload['icp'].transformation):.6f}"
+        mw.update_scan_tab(
+            self.result_scan_id,
+            info_text=info_text,
+            point_clouds=[
+                ("Source", source_temp, None),
+                ("Target", target_temp, None),
+            ],
+            meshes=meshes,
+        )
+
+    def _describe_global_stage(self):
+        if self.global_transform_model == "similarity":
+            return f"{self.global_stage_name} (Similarity / uniform scale)"
+        return f"{self.global_stage_name} (Rigid)"
+
+    @staticmethod
+    def _extract_uniform_scale(transformation):
+        linear = np.asarray(transformation, dtype=float)[:3, :3]
+        column_norms = np.linalg.norm(linear, axis=0)
+        return float(np.mean(column_norms))
+
+    @staticmethod
+    def _effective_spacing_mm(scan):
+        if scan is None or scan.voxel_size_mm is None:
+            return None
+
+        downsampling = 1
+        if getattr(scan, "volume_source", None) is not None:
+            downsampling = max(1, int(getattr(scan.volume_source, "default_downsample_zyx", 1)))
+        elif scan.metadata:
+            downsampling = max(1, int(scan.metadata.get("Downsampling", 1)))
+
+        return float(scan.voxel_size_mm) * float(downsampling)

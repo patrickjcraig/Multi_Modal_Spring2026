@@ -1,0 +1,11 @@
+.venv/
+.vscode/
+TestData/
+reconstruction_v1/
+__pycache__/
+*.py[codz]
+*$py.class
+.ipynb_checkpoints
+reconstruction_partial.h5
+120kv_FDK/
+1um_.25inch/

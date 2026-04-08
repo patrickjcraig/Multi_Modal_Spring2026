@@ -1,0 +1,45 @@
+Registration performed on our sample data. 
+
+Goals:
+    -Perform affine transformations
+        a. Rotation
+        b. Scaling
+        c. Rotation + Scaling
+        d. Shifting/Biasing
+
+    -Perform affine transformations of partial data onto large data
+
+Algorithms:
+    -RANSAC
+    #-Fast Global Registration (Not robust to shifting/biasing)
+    #-SIFT3D
+
+Parameters:
+    -Registration Parameters
+    -From sample data
+        a. Region of Interest (ROI) - Bounding box for input [2 verticies]
+            roi_posx = 0
+            roi_posy = 0
+            roi_posz = 0
+            roi_sizex = 2943
+            roi_sizey = 2304
+            roi_sizez = 2943
+        b. Downsampling - Downsampling factor from TIFF for memory [integer]
+            at least 2 ideally 4
+        c. Point Cloud Points - Number of points in converted cloud [integer]
+            ~2000-5000 works not sure how to estimate optimally
+    -voxel_size = 0.0004631795192807952
+
+Rendering
+    -Open3D into OpenGL
+    -
+
+
+--ct-folder "C:\Users\whisk\Downloads\Senior Design\Multi_Modal_Spring2026\120kv_FDK"
+
+
+MARCHING CUBES >= 42_000 to actually see metal
+
+python main.py --ct-folder "C:\Users\whisk\Downloads\Senior Design\Multi_Modal_Spring2026\120kv_FDK" --downsample 3 --roi-sx 3000 --roi-sy 3000 --roi-sz 3000  --mc-level 42000  --n-points 4000
+
+python main.py --ct-folder "C:\Users\whisk\Downloads\Senior Design\Multi_Modal_Spring2026\120kv_FDK" --downsample 2 --roi-sx 2943 --roi-sy 2304 --roi-sz 2943  --mc-level 40000  --n-points 2000
