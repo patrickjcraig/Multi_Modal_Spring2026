@@ -152,6 +152,7 @@ class ScanViewerTab(QWidget):
             return
 
         if self._volume_loaded:
+            self._sync_volume_view_from_geometry()
             self._showing_volume_mode = True
             self.viewer.set_volume_mode(True)
             self.btn_toggle_volume.setText("Show Geometry")
@@ -250,6 +251,8 @@ class ScanViewerTab(QWidget):
         self.viewer.clear_point_clouds()
         for name, pcd, color in clouds:
             self.viewer.add_point_cloud(name, pcd, color=color)
+        if self._volume_loaded:
+            self._sync_volume_view_from_geometry()
         self.viewer.update()
     
     def set_mesh(self, name, mesh, color=None):
@@ -261,6 +264,8 @@ class ScanViewerTab(QWidget):
             color: Optional RGB color tuple (0-1 range)
         """
         self.viewer.add_mesh(name, mesh, color)
+        if self._volume_loaded:
+            self._sync_volume_view_from_geometry()
         self.viewer.update()
 
     def set_meshes(self, meshes):
@@ -271,6 +276,8 @@ class ScanViewerTab(QWidget):
         self.viewer.clear_meshes()
         for name, mesh, color in meshes:
             self.viewer.add_mesh(name, mesh, color=color)
+        if self._volume_loaded:
+            self._sync_volume_view_from_geometry()
         self.viewer.update()
     
     def clear_meshes(self):

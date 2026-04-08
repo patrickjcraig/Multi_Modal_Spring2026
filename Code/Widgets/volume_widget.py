@@ -85,12 +85,12 @@ class VolumeRenderWidget(QWidget):
         self._volume_item.setData(rgba)
         self._volume_loaded = True
 
-        max_dim = max(data.shape) if data.size else 1
-        self._view.setCameraPosition(distance=max(25, max_dim * 2))
-
-        if self._grid_item is not None:
-            self._grid_item.resetTransform()
-            self._grid_item.scale(max(data.shape[0], 1), max(data.shape[1], 1), 1)
+        # Keep the shared camera/scene scale unchanged so toggling between
+        # geometry and volume does not visually "rescale" the geometry view.
+        # Only choose a default distance when nothing is in-scene yet.
+        if not self.point_clouds and not self.meshes:
+            max_dim = max(data.shape) if data.size else 1
+            self._view.setCameraPosition(distance=max(25, max_dim * 2))
 
         self._apply_visibility()
 
@@ -224,9 +224,11 @@ class VolumeRenderWidget(QWidget):
         minx, miny, minz = [float(v) for v in bounds_min_xyz]
         maxx, maxy, maxz = [float(v) for v in bounds_max_xyz]
 
-        sx = (maxx - minx) / float(max(nx - 1, 1))
-        sy = (maxy - miny) / float(max(ny - 1, 1))
-        sz = (maxz - minz) / float(max(nz - 1, 1))
+        # GLVolumeItem coordinates cover full voxel extents, so scaling by N
+        # (not N-1) keeps world-size parity with geometry bounds.
+        sx = (maxx - minx) / float(max(nx, 1))
+        sy = (maxy - miny) / float(max(ny, 1))
+        sz = (maxz - minz) / float(max(nz, 1))
 
         self._volume_item.resetTransform()
         # Translate first so translation is not scaled by the subsequent scale.
