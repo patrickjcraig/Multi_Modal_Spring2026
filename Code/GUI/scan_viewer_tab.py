@@ -25,7 +25,7 @@ class VolumeLoadWorker(QThread):
     def run(self):
         try:
             volume, metadata = load_ct_volume_preview(
-                folder_path=self.volume_source.folder_path,
+                volume_source=self.volume_source,
                 downsample_zyx=self.downsample_zyx,
                 crop_zyx=self.volume_source.crop_zyx,
                 max_preview_voxels=self.volume_source.max_preview_voxels,

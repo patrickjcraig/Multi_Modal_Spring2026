@@ -1,28 +1,19 @@
-from dataclasses import dataclass
 import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox
 
+from .xray_file_import_dialog import XRayFileImportDialog
+from .xray_import_types import XRayImportParams
 from .ui_xray_dialog import Ui_XRayDialog
-
-
-@dataclass
-class XRayImportParams:
-    import_type: str
-    path: str
-    voxel_size_mm: float
-    roi_xyz: tuple[int, int, int]
-    downsampling: int
-    pcd_points: int
-    level: int
 
 
 class XRayImportDialog(QDialog, Ui_XRayDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
+        self._file_import_params = None
 
         self._setup_ui()
         self._setup_connections()
@@ -46,11 +37,70 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
         self.spin_downsampling.setMinimum(1)
         self.spin_pcd_pts.setMinimum(1)
         self.spin_marching_cubes.setMinimum(1)
+        self._configure_arrow_spinbox(self.spin_downsampling)
+
+    @staticmethod
+    def _configure_arrow_spinbox(spinbox):
+        # Windows styles can clip the upper arrow when the control is compact.
+        spinbox.setMinimumWidth(max(spinbox.minimumWidth(), 150))
+        spinbox.setMinimumHeight(max(spinbox.minimumHeight(), 34))
+        spinbox.setStyleSheet(
+            "QSpinBox {"
+            " background-color: #f0f0f0;"
+            " border-radius: 3px;"
+            " padding-left: 4px;"
+            " padding-right: 22px;"
+            "}"
+            "QSpinBox::up-button, QSpinBox::down-button {"
+            " width: 18px;"
+            "}"
+        )
 
     def _setup_connections(self):
         self.btn_browse.clicked.connect(self.browse_path)
+        self.combo_import_type.currentTextChanged.connect(self._update_mode_state)
         self.buttonBox.accepted.connect(self.validate_and_accept)
         self.buttonBox.rejected.connect(self.reject)
+        self._update_mode_state()
+
+    def _numeric_defaults(self):
+        return XRayImportParams(
+            import_type=self.combo_import_type.currentText().strip().lower(),
+            path=self.line_path.text().strip(),
+            voxel_size_mm=float(self.line_voxel_size.text().strip() or 0.006937965888099794),
+            roi_xyz=(
+                self.spin_roi_x.value(),
+                self.spin_roi_y.value(),
+                self.spin_roi_z.value(),
+            ),
+            downsampling=self.spin_downsampling.value(),
+            pcd_points=self.spin_pcd_pts.value(),
+            level=self.spin_marching_cubes.value(),
+            dataset_path=None,
+        )
+
+    def _update_mode_state(self):
+        import_type = self.combo_import_type.currentText().strip().lower()
+        is_tiff = import_type == "tiff stack folder"
+        self.label_file_folder.setText("Folder" if is_tiff else "File")
+        self.label_marching_cubes.setText("Marching Cubes" if is_tiff else "Continue in next dialog")
+        for widget in (
+            self.line_voxel_size,
+            self.spin_roi_x,
+            self.spin_roi_y,
+            self.spin_roi_z,
+            self.spin_downsampling,
+            self.spin_pcd_pts,
+            self.spin_marching_cubes,
+        ):
+            widget.setEnabled(is_tiff)
+        for label in (
+            self.label_voxel_size,
+            self.label_roi_xyz,
+            self.label_downsampling,
+            self.label_point_cloud_points,
+        ):
+            label.setEnabled(is_tiff)
 
     def browse_path(self):
         import_type = self.combo_import_type.currentText().strip().lower()
@@ -86,8 +136,7 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
     def validate_and_accept(self):
         import_type = self.combo_import_type.currentText().strip().lower()
         path = self.line_path.text().strip()
-        voxel_text = self.line_voxel_size.text().strip()
-        level = self.spin_marching_cubes.value()
+        self._file_import_params = None
 
         if not path:
             QMessageBox.warning(self, "Missing Path", "Please select a file or folder path.")
@@ -113,6 +162,26 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
             )
             return
 
+        if import_type in {"h5", "npy"}:
+            try:
+                file_dialog = XRayFileImportDialog(
+                    import_type=import_type,
+                    file_path=path,
+                    defaults=self._numeric_defaults(),
+                    parent=self,
+                )
+            except Exception as exc:
+                QMessageBox.warning(self, "File Import Error", str(exc))
+                return
+
+            if not file_dialog.exec():
+                return
+
+            self._file_import_params = file_dialog.get_import_params()
+            self.accept()
+            return
+
+        voxel_text = self.line_voxel_size.text().strip()
         if not voxel_text:
             QMessageBox.warning(self, "Missing Voxel Size", "Please enter a voxel size in mm.")
             return
@@ -148,6 +217,9 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
         self.accept()
 
     def get_import_params(self) -> XRayImportParams:
+        if self._file_import_params is not None:
+            return self._file_import_params
+
         return XRayImportParams(
             import_type=self.combo_import_type.currentText().strip().lower(),
             path=self.line_path.text().strip(),
@@ -160,4 +232,5 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
             downsampling=self.spin_downsampling.value(),
             pcd_points=self.spin_pcd_pts.value(),
             level=self.spin_marching_cubes.value(),
+            dataset_path=None,
         )

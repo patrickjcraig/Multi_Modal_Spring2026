@@ -1,7 +1,13 @@
 import os
 import numpy as np
 from PySide6.QtWidgets import QMessageBox
-from makeGeometry import VolumeSource, get_mesh_from_ct_stack, inspect_tiff_stack
+from makeGeometry import (
+    VolumeSource,
+    get_mesh_from_array_volume,
+    get_mesh_from_ct_stack,
+    inspect_array_volume,
+    inspect_tiff_stack,
+)
 from GUI.dialogs.xray_import_dialog import XRayImportDialog
 
 
@@ -45,7 +51,8 @@ class ImportController:
                 level=None,
             )
             volume_source = VolumeSource(
-                folder_path=demo_folder,
+                path=demo_folder,
+                source_type="tiff_stack",
                 voxel_size_mm=None,
                 crop_zyx=(256, 256, 256),
                 default_downsample_zyx=4,
@@ -106,23 +113,19 @@ class ImportController:
             )
 
         elif params.import_type == "h5":
-            self.load_h5(params.path)
+            self.load_h5(params)
 
         elif params.import_type == "npy":
-            self.load_npy(params.path)
+            self.load_npy(params)
 
         else:
             mw.statusbar.showMessage(f"Unknown import type: {params.import_type}")
 
-    def load_h5(self, file_path):
-        mw = self.main
-        mw.statusbar.showMessage("H5 import not implemented yet.")
-        print(f"[TODO] load_h5: {file_path}")
+    def load_h5(self, params):
+        self._load_array_file(params, file_type="h5")
 
-    def load_npy(self, file_path):
-        mw = self.main
-        mw.statusbar.showMessage("NPY import not implemented yet.")
-        print(f"[TODO] load_npy: {file_path}")
+    def load_npy(self, params):
+        self._load_array_file(params, file_type="npy")
 
     def load_tiff_stack(self, folder_path, voxel_size_mm, roi_xyz, downsampling, pcd_points, level=None):
         mw = self.main
@@ -140,7 +143,8 @@ class ImportController:
                 level=level,
             )
             volume_source = VolumeSource(
-                folder_path=folder_path,
+                path=folder_path,
+                source_type="tiff_stack",
                 voxel_size_mm=voxel_size_mm,
                 crop_zyx=crop_zyx,
                 default_downsample_zyx=downsampling,
@@ -187,3 +191,73 @@ class ImportController:
         except Exception as e:
             QMessageBox.critical(mw, "Import Error", str(e))
             mw.statusbar.showMessage("Error importing TIFF stack.")
+
+    def _load_array_file(self, params, file_type):
+        mw = self.main
+        try:
+            label = file_type.upper()
+            mw.statusbar.showMessage(f"Loading {label} volume...")
+
+            crop_zyx = (params.roi_xyz[2], params.roi_xyz[1], params.roi_xyz[0])
+            volume_info = inspect_array_volume(
+                file_path=params.path,
+                file_type=file_type,
+                dataset_path=params.dataset_path,
+            )
+            mesh, level = get_mesh_from_array_volume(
+                file_path=params.path,
+                file_type=file_type,
+                voxel_size_mm=params.voxel_size_mm,
+                downsample_zyx=params.downsampling,
+                crop_zyx=crop_zyx,
+                level=params.level,
+                dataset_path=params.dataset_path,
+            )
+            volume_source = VolumeSource(
+                path=params.path,
+                source_type=file_type,
+                dataset_path=params.dataset_path,
+                voxel_size_mm=params.voxel_size_mm,
+                crop_zyx=crop_zyx,
+                default_downsample_zyx=params.downsampling,
+            )
+            pcd = mesh.sample_points_poisson_disk(number_of_points=params.pcd_points)
+
+            metadata = {
+                "Voxel (mm)": params.voxel_size_mm,
+                "ROI XYZ": params.roi_xyz,
+                "Downsampling": params.downsampling,
+                "Points": params.pcd_points,
+                "Mesh source": f"{label} marching cubes",
+                "MC level": level,
+                "Volume shape ZYX": volume_info["shape_zyx"],
+                "Volume dtype": volume_info["dtype"],
+                "3D volume": "lazy preview available",
+            }
+            if file_type == "h5":
+                metadata["H5 dataset"] = volume_info["dataset_path"]
+                if volume_info.get("spacing_zyx_mm") is not None:
+                    metadata["spacing_zyx_mm"] = volume_info["spacing_zyx_mm"]
+
+            scan_id = mw.add_scan_tab(
+                name=f"Imported CT {mw.scanTabs.count() + 1}",
+                pcd=pcd,
+                mesh=mesh,
+                modality=f"xray-{file_type}",
+                path=params.path,
+                voxel_size_mm=params.voxel_size_mm,
+                metadata=metadata,
+                volume_source=volume_source,
+            )
+            if mw.source_scan_id is None:
+                mw.source_scan_id = scan_id
+            elif mw.target_scan_id is None:
+                mw.target_scan_id = scan_id
+            mw._sync_selection_ui()
+            mw.registration.apply_suggested_ransac_parameters(show_status=False)
+
+            mw.statusbar.showMessage(f"{label} volume imported successfully.")
+
+        except Exception as e:
+            QMessageBox.critical(mw, "Import Error", str(e))
+            mw.statusbar.showMessage(f"Error importing {file_type.upper()} volume.")
