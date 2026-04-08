@@ -3,15 +3,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSpinBox,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 from PySide6.QtCore import QThread, Qt, Signal
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut
 
 from makeGeometry import load_ct_volume_preview
-from Widgets.pointcloud_widget import PointCloudWidget
 from Widgets.volume_widget import VolumeRenderWidget
 
 
@@ -49,6 +47,8 @@ class ScanViewerTab(QWidget):
         self.volume_source = None
         self._volume_loaded = False
         self._volume_worker = None
+        self._last_volume_shape_xyz = None
+        self._showing_volume_mode = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -86,21 +86,24 @@ class ScanViewerTab(QWidget):
         controls.addWidget(self.volume_status_label, 1)
         layout.addLayout(controls)
 
-        self.view_stack = QStackedWidget()
-
-        # Create unified viewer that supports both point clouds and meshes
-        self.viewer = PointCloudWidget(self)
-        self.view_stack.addWidget(self.viewer)
-
-        self.volume_viewer = VolumeRenderWidget(self)
-        self.view_stack.addWidget(self.volume_viewer)
-
-        layout.addWidget(self.view_stack, 1)
+        # Single pyqtgraph renderer for both geometry and volume
+        self.viewer = VolumeRenderWidget(self)
+        self.volume_viewer = self.viewer
+        layout.addWidget(self.viewer, 1)
 
         self.btn_toggle_volume.clicked.connect(self.toggle_volume_view)
         self.btn_toggle_mesh.clicked.connect(self.toggle_pointcloud_mesh_view)
         self.btn_reload_volume.clicked.connect(self.reload_volume)
         self.spin_volume_downsample.valueChanged.connect(self._mark_volume_stale)
+
+        # Keep shortcuts working even when child widgets (like GLViewWidget) have focus.
+        self.shortcut_toggle_volume = QShortcut(QKeySequence("Ctrl+T"), self)
+        self.shortcut_toggle_volume.setContext(Qt.WidgetWithChildrenShortcut)
+        self.shortcut_toggle_volume.activated.connect(self.toggle_volume_view)
+
+        self.shortcut_toggle_mesh = QShortcut(QKeySequence("Ctrl+M"), self)
+        self.shortcut_toggle_mesh.setContext(Qt.WidgetWithChildrenShortcut)
+        self.shortcut_toggle_mesh.activated.connect(self.toggle_pointcloud_mesh_view)
         
         # Enable focus for keyboard events
         self.setFocusPolicy(Qt.StrongFocus)
@@ -122,6 +125,7 @@ class ScanViewerTab(QWidget):
     def set_volume_source(self, volume_source):
         self.volume_source = volume_source
         self._volume_loaded = False
+        self._last_volume_shape_xyz = None
         has_source = volume_source is not None
         self.btn_toggle_volume.setEnabled(has_source)
         self.spin_volume_downsample.setEnabled(has_source)
@@ -131,7 +135,8 @@ class ScanViewerTab(QWidget):
             self.spin_volume_downsample.setValue(volume_source.default_downsample_zyx)
             self.volume_status_label.setText("Volume: lazy, not loaded")
         else:
-            self.view_stack.setCurrentWidget(self.viewer)
+            self._showing_volume_mode = False
+            self.viewer.set_volume_mode(False)
             self.btn_toggle_volume.setText("Show 3D Volume")
             self.volume_status_label.setText("Volume: none")
 
@@ -140,19 +145,22 @@ class ScanViewerTab(QWidget):
             self.toggle_pointcloud_mesh_view()
             return
 
-        if self.view_stack.currentWidget() is self.volume_viewer:
-            self.view_stack.setCurrentWidget(self.viewer)
+        if self._showing_volume_mode:
+            self._showing_volume_mode = False
+            self.viewer.set_volume_mode(False)
             self.btn_toggle_volume.setText("Show 3D Volume")
             return
 
         if self._volume_loaded:
-            self.view_stack.setCurrentWidget(self.volume_viewer)
+            self._showing_volume_mode = True
+            self.viewer.set_volume_mode(True)
             self.btn_toggle_volume.setText("Show Geometry")
         else:
             self.reload_volume(show_after_load=True)
 
     def toggle_pointcloud_mesh_view(self):
-        self.view_stack.setCurrentWidget(self.viewer)
+        self._showing_volume_mode = False
+        self.viewer.set_volume_mode(False)
         self.btn_toggle_volume.setText("Show 3D Volume")
         self.viewer.toggle_pointcloud_mesh_view()
 
@@ -187,11 +195,14 @@ class ScanViewerTab(QWidget):
         self._volume_worker.start()
 
     def _on_volume_loaded(self, volume, metadata, show_after_load):
-        self.volume_viewer.set_volume(volume)
+        self.viewer.set_volume(volume)
+        self._last_volume_shape_xyz = tuple(int(v) for v in volume.shape)
+        self._sync_volume_view_from_geometry(volume_shape_xyz=volume.shape)
         self._volume_loaded = True
 
         if show_after_load:
-            self.view_stack.setCurrentWidget(self.volume_viewer)
+            self._showing_volume_mode = True
+            self.viewer.set_volume_mode(True)
             self.btn_toggle_volume.setText("Show Geometry")
 
         self.btn_toggle_volume.setEnabled(True)
@@ -203,6 +214,26 @@ class ScanViewerTab(QWidget):
             f"downsample {metadata['downsample_zyx']}"
         )
         self._volume_worker = None
+
+    def _sync_volume_view_from_geometry(self, volume_shape_xyz=None):
+        """Align volume scale/placement to geometry bounds inside shared pyqtgraph view."""
+        if not self.volume_viewer.is_available():
+            return
+
+        bounds = self.viewer.get_scene_bounds()
+        if bounds is None:
+            return
+
+        if volume_shape_xyz is None:
+            if self._last_volume_shape_xyz is None:
+                return
+            volume_shape_xyz = self._last_volume_shape_xyz
+
+        self.volume_viewer.align_volume_to_world_bounds(
+            volume_shape_xyz=volume_shape_xyz,
+            bounds_min_xyz=bounds[0],
+            bounds_max_xyz=bounds[1],
+        )
 
     def _on_volume_error(self, message):
         self.btn_toggle_volume.setEnabled(self.volume_source is not None)

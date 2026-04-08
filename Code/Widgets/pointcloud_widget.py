@@ -176,6 +176,37 @@ class PointCloudWidget(QOpenGLWidget):
         camera_z = self.camera_distance * math.sin(pitch)
         return self.rotation_origin + glm.vec3(camera_x, camera_y, camera_z)
 
+    def get_camera_state(self):
+        """Return current camera state for cross-view synchronization."""
+        if glm is None:
+            return None
+        return {
+            "distance": float(self.camera_distance),
+            "pitch_deg": float(self.camera_angle_x),
+            "yaw_deg": float(self.camera_angle_y),
+            "origin_xyz": (
+                float(self.rotation_origin.x),
+                float(self.rotation_origin.y),
+                float(self.rotation_origin.z),
+            ),
+        }
+
+    def get_scene_bounds(self):
+        """Return geometry bounds as (min_xyz, max_xyz) or None if empty."""
+        cloud_blocks = [d['points'] for d in self.point_clouds.values() if len(d['points']) > 0]
+        mesh_blocks = [d['vertices'] for d in self.meshes.values() if len(d['vertices']) > 0]
+        blocks = cloud_blocks + mesh_blocks
+        if not blocks:
+            return None
+
+        pts = np.concatenate(blocks, axis=0)
+        minp = pts.min(axis=0)
+        maxp = pts.max(axis=0)
+        return (
+            (float(minp[0]), float(minp[1]), float(minp[2])),
+            (float(maxp[0]), float(maxp[1]), float(maxp[2])),
+        )
+
     def initializeGL(self):
         """Initialize OpenGL context and shaders."""
         gl.glClearColor(*self.background_color)
@@ -529,30 +560,34 @@ class PointCloudWidget(QOpenGLWidget):
         delta_x = current_x - self.last_mouse_x
         delta_y = current_y - self.last_mouse_y
         
-        if event.buttons() == Qt.LeftButton:
+        ctrl_left_drag = (event.buttons() & Qt.LeftButton) and (event.modifiers() & Qt.ControlModifier)
+        left_drag = (event.buttons() & Qt.LeftButton) and not (event.modifiers() & Qt.ControlModifier)
+
+        if left_drag:
             # Rotate view
             self.camera_angle_y += delta_x * 0.5
             self.camera_angle_x += delta_y * 0.5
             self.camera_angle_x = max(-85, min(85, self.camera_angle_x))
-        elif event.buttons() == Qt.RightButton:
+        elif ctrl_left_drag:
             # Move rotation origin in view plane
             if glm is not None:
                 camera_pos = self._camera_position()
-                
+
                 # View direction from camera to rotation origin
                 view_dir = glm.normalize(self.rotation_origin - camera_pos)
-                
+
                 # Right vector (perpendicular to view and world up)
                 right = glm.cross(view_dir, self.world_up)
                 if glm.length(right) < 1e-6:
                     right = glm.vec3(1.0, 0.0, 0.0)
                 right = glm.normalize(right)
-                
+
                 # Up vector in view plane
                 up = glm.normalize(glm.cross(right, view_dir))
-                
+
                 # Move rotation origin in view plane
-                movement = delta_x * right * 0.5 - delta_y * up * 0.5  # Note: -delta_y because screen Y is inverted
+                # Invert pan direction to match pyqtgraph camera interaction.
+                movement = -delta_x * right * 0.5 + delta_y * up * 0.5
                 self.rotation_origin += movement
         
         self.last_mouse_x = current_x
