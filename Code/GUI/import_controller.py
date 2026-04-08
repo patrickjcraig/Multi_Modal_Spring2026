@@ -74,6 +74,7 @@ class ImportController:
             if mw.source_scan_id is None:
                 mw.source_scan_id = scan_id
                 mw._sync_selection_ui()
+            mw.registration.apply_suggested_ransac_parameters(show_status=False)
 
             mw.statusbar.showMessage("Demo CT point cloud generated and displayed.")
 
@@ -179,6 +180,7 @@ class ImportController:
             elif mw.target_scan_id is None:
                 mw.target_scan_id = scan_id
             mw._sync_selection_ui()
+            mw.registration.apply_suggested_ransac_parameters(show_status=False)
 
             mw.statusbar.showMessage("TIFF stack imported successfully.")
 

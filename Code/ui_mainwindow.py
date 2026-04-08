@@ -205,10 +205,10 @@ class Ui_MainWindow(object):
 
         self.spinBox_voxel_size = QDoubleSpinBox(self.page_registration_tools)
         self.spinBox_voxel_size.setObjectName(u"spinBox_voxel_size")
-        self.spinBox_voxel_size.setDecimals(2)
-        self.spinBox_voxel_size.setMinimum(0.100000000000000)
-        self.spinBox_voxel_size.setMaximum(10.000000000000000)
-        self.spinBox_voxel_size.setSingleStep(0.500000000000000)
+        self.spinBox_voxel_size.setDecimals(4)
+        self.spinBox_voxel_size.setMinimum(0.000100000000000)
+        self.spinBox_voxel_size.setMaximum(100.000000000000000)
+        self.spinBox_voxel_size.setSingleStep(0.010000000000000)
         self.spinBox_voxel_size.setValue(2.000000000000000)
 
         self.layout_registration_tools.addWidget(self.spinBox_voxel_size)
@@ -246,8 +246,8 @@ class Ui_MainWindow(object):
         self.spinBox_ransac_dist = QDoubleSpinBox(self.page_registration_tools)
         self.spinBox_ransac_dist.setObjectName(u"spinBox_ransac_dist")
         self.spinBox_ransac_dist.setDecimals(2)
-        self.spinBox_ransac_dist.setMinimum(0.500000000000000)
-        self.spinBox_ransac_dist.setMaximum(5.000000000000000)
+        self.spinBox_ransac_dist.setMinimum(0.100000000000000)
+        self.spinBox_ransac_dist.setMaximum(10.000000000000000)
         self.spinBox_ransac_dist.setSingleStep(0.100000000000000)
         self.spinBox_ransac_dist.setValue(1.500000000000000)
 
@@ -261,8 +261,8 @@ class Ui_MainWindow(object):
         self.spinBox_ransac_max_iter = QSpinBox(self.page_registration_tools)
         self.spinBox_ransac_max_iter.setObjectName(u"spinBox_ransac_max_iter")
         self.spinBox_ransac_max_iter.setMinimum(1000)
-        self.spinBox_ransac_max_iter.setMaximum(1000000)
-        self.spinBox_ransac_max_iter.setSingleStep(10000)
+        self.spinBox_ransac_max_iter.setMaximum(10000000)
+        self.spinBox_ransac_max_iter.setSingleStep(50000)
         self.spinBox_ransac_max_iter.setValue(100000)
 
         self.layout_registration_tools.addWidget(self.spinBox_ransac_max_iter)
@@ -275,8 +275,8 @@ class Ui_MainWindow(object):
         self.spinBox_ransac_validation = QSpinBox(self.page_registration_tools)
         self.spinBox_ransac_validation.setObjectName(u"spinBox_ransac_validation")
         self.spinBox_ransac_validation.setMinimum(100)
-        self.spinBox_ransac_validation.setMaximum(10000)
-        self.spinBox_ransac_validation.setSingleStep(100)
+        self.spinBox_ransac_validation.setMaximum(100000)
+        self.spinBox_ransac_validation.setSingleStep(500)
         self.spinBox_ransac_validation.setValue(1000)
 
         self.layout_registration_tools.addWidget(self.spinBox_ransac_validation)

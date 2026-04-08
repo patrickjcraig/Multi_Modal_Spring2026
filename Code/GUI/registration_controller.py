@@ -113,6 +113,82 @@ class RegistrationController(QObject):
         self.icp_thread.error.connect(self._on_registration_error)
         self.icp_thread.start()
 
+    def suggest_ransac_parameters(self, source_scan=None, target_scan=None, global_transform_model=None):
+        """Suggest registration parameters from imported scan metadata."""
+        mw = self.main
+        source_scan = source_scan or self.source_scan or mw.scans.get(mw.source_scan_id)
+        target_scan = target_scan or self.target_scan or mw.scans.get(mw.target_scan_id)
+        global_transform_model = global_transform_model or (mw.combo_global_transform_model.currentData() or "rigid")
+
+        scans = [scan for scan in (source_scan, target_scan) if scan is not None]
+        effective_spacings = []
+        point_counts = []
+        for scan in scans:
+            spacing = self._effective_spacing_mm(scan)
+            if spacing is not None:
+                effective_spacings.append(spacing)
+
+            if scan.pcd is not None:
+                point_counts.append(len(np.asarray(scan.pcd.points)))
+            else:
+                point_count = scan.metadata.get("Points") if scan.metadata else None
+                if point_count is not None:
+                    point_counts.append(int(point_count))
+
+        if effective_spacings:
+            voxel_size = max(effective_spacings)
+        else:
+            voxel_size = mw.spinBox_voxel_size.value()
+
+        max_point_count = max(point_counts, default=5000)
+        dist_multiplier = 1.5
+        max_iterations = 100000
+
+        if max_point_count >= 50000:
+            max_iterations = 300000
+        elif max_point_count >= 20000:
+            max_iterations = 200000
+        elif max_point_count >= 5000:
+            max_iterations = 150000
+
+        if global_transform_model == "similarity":
+            dist_multiplier = 2.0
+            max_iterations = int(max_iterations * 2.0)
+
+        if len(effective_spacings) == 2:
+            spacing_ratio = max(effective_spacings) / max(min(effective_spacings), 1e-9)
+            if spacing_ratio > 1.25:
+                dist_multiplier += 0.2
+                max_iterations = int(max_iterations * 1.5)
+
+        validation_iterations = max(1000, int(max_iterations * 0.02))
+        validation_iterations = min(validation_iterations, 100000)
+
+        voxel_size = float(np.clip(voxel_size, mw.spinBox_voxel_size.minimum(), mw.spinBox_voxel_size.maximum()))
+        dist_multiplier = float(np.clip(dist_multiplier, mw.spinBox_ransac_dist.minimum(), mw.spinBox_ransac_dist.maximum()))
+        max_iterations = int(np.clip(max_iterations, mw.spinBox_ransac_max_iter.minimum(), mw.spinBox_ransac_max_iter.maximum()))
+        validation_iterations = int(np.clip(validation_iterations, mw.spinBox_ransac_validation.minimum(), mw.spinBox_ransac_validation.maximum()))
+
+        return {
+            "voxel_size": voxel_size,
+            "ransac_dist_multiplier": dist_multiplier,
+            "ransac_max_iter": max_iterations,
+            "ransac_validation": validation_iterations,
+        }
+
+    def apply_suggested_ransac_parameters(self, source_scan=None, target_scan=None, show_status=False):
+        suggestions = self.suggest_ransac_parameters(source_scan=source_scan, target_scan=target_scan)
+        mw = self.main
+        mw.spinBox_voxel_size.setValue(suggestions["voxel_size"])
+        mw.spinBox_ransac_dist.setValue(suggestions["ransac_dist_multiplier"])
+        mw.spinBox_ransac_max_iter.setValue(suggestions["ransac_max_iter"])
+        mw.spinBox_ransac_validation.setValue(suggestions["ransac_validation"])
+
+        if show_status:
+            mw.statusbar.showMessage(
+                "Suggested registration parameters updated from scan spacing and RANSAC mode."
+            )
+
     def prev_step(self):
         """Go back one entry in the history."""
         if self.current_step > 0:
@@ -345,3 +421,16 @@ class RegistrationController(QObject):
         linear = np.asarray(transformation, dtype=float)[:3, :3]
         column_norms = np.linalg.norm(linear, axis=0)
         return float(np.mean(column_norms))
+
+    @staticmethod
+    def _effective_spacing_mm(scan):
+        if scan is None or scan.voxel_size_mm is None:
+            return None
+
+        downsampling = 1
+        if getattr(scan, "volume_source", None) is not None:
+            downsampling = max(1, int(getattr(scan.volume_source, "default_downsample_zyx", 1)))
+        elif scan.metadata:
+            downsampling = max(1, int(scan.metadata.get("Downsampling", 1)))
+
+        return float(scan.voxel_size_mm) * float(downsampling)

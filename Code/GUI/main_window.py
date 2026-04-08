@@ -98,6 +98,9 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.btn_show_transformation_tools.clicked.connect(self.show_transformation_tools)
         self.actionRegistration_3.triggered.connect(self.show_registration_tools)
         self.actionTransformation_2.triggered.connect(self.show_transformation_tools)
+        self.combo_global_transform_model.currentIndexChanged.connect(
+            lambda _index: self.registration.apply_suggested_ransac_parameters(show_status=True)
+        )
         self.btn_matrix_identity.clicked.connect(self.reset_affine_matrix_to_identity)
         self.btn_matrix_load_current.clicked.connect(self.load_current_affine_matrix)
         self.btn_transform_apply_current.clicked.connect(self.apply_affine_to_current_scan)
@@ -110,6 +113,15 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.toolPanelGroup.addButton(self.btn_show_transformation_tools)
         self.combo_global_transform_model.setItemData(0, "rigid")
         self.combo_global_transform_model.setItemData(1, "similarity")
+        self.spinBox_voxel_size.setDecimals(4)
+        self.spinBox_voxel_size.setRange(0.0001, 100.0)
+        self.spinBox_voxel_size.setSingleStep(0.01)
+        self.spinBox_ransac_dist.setRange(0.1, 10.0)
+        self.spinBox_ransac_dist.setSingleStep(0.1)
+        self.spinBox_ransac_max_iter.setRange(1000, 10000000)
+        self.spinBox_ransac_max_iter.setSingleStep(50000)
+        self.spinBox_ransac_validation.setRange(100, 100000)
+        self.spinBox_ransac_validation.setSingleStep(500)
 
         self._matrix_spinboxes = [
             [getattr(self, f"matrix_{row}{col}") for col in range(4)]
@@ -370,6 +382,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
             return
         self.source_scan_id = record.scan_id
         self._sync_selection_ui()
+        self.registration.apply_suggested_ransac_parameters(source_scan=record, show_status=False)
         self.statusbar.showMessage(f"Source scan set to '{record.name}'.")
 
     def mark_current_as_target(self):
@@ -382,6 +395,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
             return
         self.target_scan_id = record.scan_id
         self._sync_selection_ui()
+        self.registration.apply_suggested_ransac_parameters(target_scan=record, show_status=False)
         self.statusbar.showMessage(f"Target scan set to '{record.name}'.")
 
     def get_registration_pair(self):

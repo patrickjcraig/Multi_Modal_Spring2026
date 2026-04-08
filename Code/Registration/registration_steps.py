@@ -1,15 +1,13 @@
-"""Utility routines for registration with iteration callbacks.
+"""Utility routines for registration stage callbacks.
 
 This module provides wrappers around Open3D's registration algorithms that
-allow the caller to observe intermediate results on each iteration.  The
+allow the caller to observe stage results in the GUI.  The
 existing high-level functions in ``open3d_ICP.py`` only expose the final
-outcome; here we re-run the algorithm in small increments and invoke a
-callback for every step.  The GUI code can then animate the transformation
-as the algorithm progresses.
+outcome; these helpers provide a small callback layer so the GUI can show
+completed global and local registration states without having to animate
+every intermediate iteration.
 
 """
-
-import open3d as o3d
 
 
 def iterative_ransac(
@@ -65,46 +63,47 @@ def iterative_icp(
     step=1,
     callback=None,
 ):
-    """Run ICP in a loop, invoking ``callback`` after each ``step`` iterations.
+    """Run ICP once and optionally emit a single callback.
 
-    The Open3D ICP wrapper accepts an ``ICPConvergenceCriteria`` object where
-    ``max_iteration`` specifies how many iterations to perform.  We iterate
-    ourselves in chunks of size ``step`` and feed the resulting transformation
-    back as the starting guess for the next chunk, collecting intermediate
-    results along the way.
-
-    ``callback`` is called with ``(iter, result)`` where ``iter`` is the
-    cumulative number of ICP iterations executed so far.
-
-    Returns
-    -------
-    RegistrationResult
-        The final ICP result.
+    The previous implementation replayed ICP with increasing iteration counts
+    so the GUI could animate each local-refinement step. That is left below as
+    commented reference code in case we want to generate a figure from the
+    intermediate poses later, but the normal workflow now runs one ICP solve
+    and exposes the final local result through the previous/next stage viewer.
     """
-    # open3d_ICP lives at workspace root/Code/open3d_ICP.py
-    #from open3d_ICP import run_ICP # we don't use the original run_ICP since it only shows the final result, custom implementation here for iterations
+    from open3d_ICP import run_ICP
 
-    # make sure we use a valid 4x4 matrix as the starting guess
-    if initial_transformation is None:
-        import numpy as _np
-        starting = _np.eye(4)
-    else:
-        starting = initial_transformation
+    result = run_ICP(
+        pcd1,
+        pcd2,
+        initial_transformation,
+        voxel_size,
+        icp_dist_multiplier,
+        max_iterations=max_iterations,
+    )
+    if callback is not None:
+        callback(max_iterations, result)
+    return result
 
-    best = None
-    # iterate with an increasing total-iteration criterion so that each
-    # callback corresponds to the result after ``it`` total ICP iterations.
-    for it in range(step, max_iterations + 1, step):
-        crit = o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=it)
-        result = o3d.pipelines.registration.registration_icp(
-            pcd1,
-            pcd2,
-            voxel_size * icp_dist_multiplier,
-            starting,
-            o3d.pipelines.registration.TransformationEstimationPointToPoint(),
-            criteria=crit,
-        )
-        best = result # no comparison needed since ICP should be sequentially improving
-        if callback is not None:
-            callback(it, result)
-    return best
+    # Legacy iterative ICP animation path kept for future figures/reference.
+    # if initial_transformation is None:
+    #     import numpy as _np
+    #     starting = _np.eye(4)
+    # else:
+    #     starting = initial_transformation
+    #
+    # best = None
+    # for it in range(step, max_iterations + 1, step):
+    #     crit = o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=it)
+    #     result = o3d.pipelines.registration.registration_icp(
+    #         pcd1,
+    #         pcd2,
+    #         voxel_size * icp_dist_multiplier,
+    #         starting,
+    #         o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+    #         criteria=crit,
+    #     )
+    #     best = result
+    #     if callback is not None:
+    #         callback(it, result)
+    # return best

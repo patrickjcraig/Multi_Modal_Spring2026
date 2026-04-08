@@ -60,6 +60,8 @@ class VolumeRenderWidget(QWidget):
         self._overlay_label.move(10, 10)
         self._overlay_label.hide()
 
+        self._update_reference_items()
+
     def is_available(self):
         return self._view is not None
 
@@ -88,10 +90,6 @@ class VolumeRenderWidget(QWidget):
         max_dim = max(data.shape) if data.size else 1
         self._view.setCameraPosition(distance=max(25, max_dim * 2))
 
-        if self._grid_item is not None:
-            self._grid_item.resetTransform()
-            self._grid_item.scale(max(data.shape[0], 1), max(data.shape[1], 1), 1)
-
         self._apply_visibility()
 
     def add_point_cloud(self, name, pcd, color=None):
@@ -115,6 +113,7 @@ class VolumeRenderWidget(QWidget):
         item = gl.GLScatterPlotItem(pos=points, color=colors, size=2.0, pxMode=True)
         self._view.addItem(item)
         self.point_clouds[name] = {"points": points, "item": item}
+        self._update_reference_items()
         self._apply_visibility()
 
     def add_mesh(self, name, mesh, color=None):
@@ -138,6 +137,7 @@ class VolumeRenderWidget(QWidget):
         )
         self._view.addItem(item)
         self.meshes[name] = {"vertices": vertices, "item": item}
+        self._update_reference_items()
         self._apply_visibility()
 
     def clear_point_clouds(self):
@@ -147,6 +147,7 @@ class VolumeRenderWidget(QWidget):
         for data in self.point_clouds.values():
             self._view.removeItem(data["item"])
         self.point_clouds.clear()
+        self._update_reference_items()
 
     def clear_meshes(self):
         if not self.is_available():
@@ -155,6 +156,7 @@ class VolumeRenderWidget(QWidget):
         for data in self.meshes.values():
             self._view.removeItem(data["item"])
         self.meshes.clear()
+        self._update_reference_items()
 
     def toggle_pointcloud_mesh_view(self):
         self.show_pointcloud = not self.show_pointcloud
@@ -232,6 +234,7 @@ class VolumeRenderWidget(QWidget):
         # Translate first so translation is not scaled by the subsequent scale.
         self._volume_item.translate(minx, miny, minz)
         self._volume_item.scale(sx, sy, sz)
+        self._update_reference_items((bounds_min_xyz, bounds_max_xyz))
 
     def set_camera_from_geometry_state(self, camera_state):
         """Apply geometry viewer camera state to the pyqtgraph camera."""
@@ -253,3 +256,35 @@ class VolumeRenderWidget(QWidget):
         super().resizeEvent(event)
         if hasattr(self, "_overlay_label"):
             self._overlay_label.adjustSize()
+
+    def _update_reference_items(self, bounds=None):
+        """Resize and position the grid/axes to match the current scene."""
+        if not self.is_available():
+            return
+
+        if bounds is None:
+            bounds = self.get_scene_bounds()
+
+        if bounds is None:
+            minx = miny = minz = -10.0
+            maxx = maxy = maxz = 10.0
+        else:
+            (minx, miny, minz), (maxx, maxy, maxz) = bounds
+
+        sizex = max(float(maxx - minx), 1.0)
+        sizey = max(float(maxy - miny), 1.0)
+        sizez = max(float(maxz - minz), 1.0)
+        extent = max(sizex, sizey, sizez, 20.0)
+        spacing = max(extent / 20.0, 0.1)
+        centerx = (float(minx) + float(maxx)) * 0.5
+        centery = (float(miny) + float(maxy)) * 0.5
+        plane_z = min(float(minz), 0.0)
+
+        if self._grid_item is not None:
+            self._grid_item.setSpacing(spacing, spacing, 1.0)
+            self._grid_item.setSize(extent * 2.0, extent * 2.0, 1.0)
+            self._grid_item.resetTransform()
+            self._grid_item.translate(centerx, centery, plane_z)
+
+        if self._axes_item is not None:
+            self._axes_item.setSize(extent * 0.25, extent * 0.25, extent * 0.25)

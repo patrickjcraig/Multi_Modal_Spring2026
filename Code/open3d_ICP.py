@@ -89,14 +89,23 @@ def run_RANSAC(
     return result
 
 
-def run_ICP(pcd1, pcd2, initial_transform, voxel_size, icp_dist_multiplier=0.4):
+def run_ICP(
+    pcd1,
+    pcd2,
+    initial_transform,
+    voxel_size,
+    icp_dist_multiplier=0.4,
+    max_iterations=50,
+):
     distance_threshold = voxel_size * icp_dist_multiplier
+    criteria = o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=max_iterations)
     result = o3d.pipelines.registration.registration_icp(
         pcd1,
         pcd2,
         distance_threshold,
         initial_transform,
         o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+        criteria=criteria,
     )
     return result
 
@@ -183,6 +192,7 @@ def run_full_registration(
             result_ransac.transformation,
             voxel_size,
             icp_dist_multiplier,
+            icp_max_iter,
         )
     else:
         def i_cb(it, res):
