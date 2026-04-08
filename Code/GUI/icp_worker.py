@@ -2,7 +2,7 @@ from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtWidgets import QMainWindow, QLabel, QProgressBar
 from PySide6.QtGui import QKeyEvent
 from open3d_ICP import run_full_registration
-from Widgets.pointcloud_widget import PointCloudWidget
+from Widgets.volume_widget import VolumeRenderWidget
 
 class ICPWorkerThread(QThread):
     """
@@ -65,18 +65,18 @@ class ICPWorkerThread(QThread):
 
 class PointCloudViewerWindow(QMainWindow):
     """
-    Standalone window for viewing point clouds and meshes with OpenGL.
+    Standalone window for viewing point clouds and meshes with pyqtgraph.
     Can toggle between point cloud and mesh visibility using Ctrl+T.
-    Both geometries are rendered in the same OpenGL context with opacity control.
+    Both geometries are rendered in the same unified viewer backend.
     """
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Point Cloud & Mesh Viewer - OpenGL")
+        self.setWindowTitle("Point Cloud & Mesh Viewer")
         self.setGeometry(100, 100, 1000, 800)
         
         # Create unified viewer that supports both point clouds and meshes
-        self.viewer = PointCloudWidget()
+        self.viewer = VolumeRenderWidget()
         self.setCentralWidget(self.viewer)
         
         # Create status bar with controls info
