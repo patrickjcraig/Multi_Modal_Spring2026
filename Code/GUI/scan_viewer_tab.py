@@ -371,7 +371,7 @@ class ScanViewerTab(QWidget):
         super().resizeEvent(event)
         self.slice_viewer.refresh()
 
-    def _on_slice_changed(self, _slice_index, _slice_count):
+    def _on_slice_changed(self, _slice_index, _slice_count, _slice_axis):
         self._update_slice_indicator()
 
     def _update_slice_indicator(self):
@@ -382,4 +382,5 @@ class ScanViewerTab(QWidget):
         self.viewer.set_slice_indicator(
             slice_index=self.slice_viewer.get_slice_index(),
             slice_count=self.slice_viewer.get_slice_count(),
+            axis=self.slice_viewer.get_slice_axis(),
         )

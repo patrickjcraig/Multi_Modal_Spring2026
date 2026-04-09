@@ -2,7 +2,7 @@ import numpy as np
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
 
 class SliceViewerTab:
@@ -32,6 +32,15 @@ class SliceViewerTab:
         self.slice_slider.setEnabled(False)
         self.slice_slider.valueChanged.connect(self._on_slice_slider_changed)
         controls_layout.addWidget(self.slice_slider, 1)
+
+        self.axis_combo = QComboBox(self.controls_frame)
+        self.axis_combo.addItem("X", 0)
+        self.axis_combo.addItem("Y", 1)
+        self.axis_combo.addItem("Z", 2)
+        self.axis_combo.setCurrentIndex(2)
+        self.axis_combo.setMinimumWidth(56)
+        self.axis_combo.currentIndexChanged.connect(self._on_axis_changed)
+        controls_layout.addWidget(self.axis_combo)
 
         self.slice_index_label = QLabel("0 / 0")
         controls_layout.addWidget(self.slice_index_label)
@@ -113,6 +122,9 @@ class SliceViewerTab:
             return 0
         return int(self.slice_slider.maximum()) + 1
 
+    def get_slice_axis(self):
+        return int(self._slice_axis)
+
     def _setup_slice_controls_for_volume(self, shape_xyz):
         depth = max(1, int(shape_xyz[self._slice_axis]))
         max_index = depth - 1
@@ -129,10 +141,30 @@ class SliceViewerTab:
         self._render_current_slice()
         self._emit_slice_changed()
 
+    def _on_axis_changed(self, combo_index):
+        axis_value = self.axis_combo.itemData(int(combo_index))
+        if axis_value is None:
+            return
+        self._slice_axis = int(axis_value)
+        self.slice_label.setText(f"Slice {self._axis_name()}")
+
+        if self._volume_xyz is not None:
+            self._setup_slice_controls_for_volume(self._volume_xyz.shape)
+            self._render_current_slice()
+
+        self._emit_slice_changed()
+
     def _extract_slice_uint8(self, volume_xyz, slice_index):
-        # XY plane sampled at Z to stay parallel with the scene grid.
-        slice_xy = np.asarray(volume_xyz[:, :, int(slice_index)], dtype=np.uint8)
-        return np.ascontiguousarray(np.flipud(slice_xy.T))
+        if self._slice_axis == 0:
+            # YZ plane sampled at X
+            plane = np.asarray(volume_xyz[int(slice_index), :, :], dtype=np.uint8)
+        elif self._slice_axis == 1:
+            # XZ plane sampled at Y
+            plane = np.asarray(volume_xyz[:, int(slice_index), :], dtype=np.uint8)
+        else:
+            # XY plane sampled at Z
+            plane = np.asarray(volume_xyz[:, :, int(slice_index)], dtype=np.uint8)
+        return np.ascontiguousarray(np.flipud(plane.T))
 
     def _render_current_slice(self):
         if not self._active or self._volume_xyz is None:
@@ -165,10 +197,13 @@ class SliceViewerTab:
         total = int(self.slice_slider.maximum()) + 1
         self.slice_index_label.setText(f"{current} / {total}")
         self.slice_image_meta_label.setText(
-            f"Slice Z index: {self._current_slice_index} | Use Up/Down arrows for fine stepping"
+            f"Slice {self._axis_name()} index: {self._current_slice_index} | Use Up/Down arrows for fine stepping"
         )
 
     def _emit_slice_changed(self):
         if self._on_slice_changed is None:
             return
-        self._on_slice_changed(self.get_slice_index(), self.get_slice_count())
+        self._on_slice_changed(self.get_slice_index(), self.get_slice_count(), self.get_slice_axis())
+
+    def _axis_name(self):
+        return "XYZ"[int(self._slice_axis)]

@@ -201,7 +201,7 @@ class VolumeRenderWidget(QWidget):
         self._slice_indicator_item.setVisible(False)
         self._slice_indicator_visible = False
 
-    def set_slice_indicator(self, slice_index, slice_count):
+    def set_slice_indicator(self, slice_index, slice_count, axis=2):
         if not self.is_available() or gl is None:
             return
         if int(slice_count) <= 0:
@@ -217,18 +217,46 @@ class VolumeRenderWidget(QWidget):
         slice_count = max(1, int(slice_count))
         slice_index = max(0, min(slice_count - 1, int(slice_index)))
 
-        dz = float(maxz - minz)
-        z = float(minz) + ((float(slice_index) + 0.5) / float(slice_count)) * dz
+        axis = int(axis)
+        t = (float(slice_index) + 0.5) / float(slice_count)
 
-        vertices = np.array(
-            [
-                [minx, miny, z],
-                [maxx, miny, z],
-                [maxx, maxy, z],
-                [minx, maxy, z],
-            ],
-            dtype=np.float32,
-        )
+        if axis == 0:
+            # YZ plane at X
+            x = float(minx) + t * float(maxx - minx)
+            vertices = np.array(
+                [
+                    [x, miny, minz],
+                    [x, maxy, minz],
+                    [x, maxy, maxz],
+                    [x, miny, maxz],
+                ],
+                dtype=np.float32,
+            )
+        elif axis == 1:
+            # XZ plane at Y
+            y = float(miny) + t * float(maxy - miny)
+            vertices = np.array(
+                [
+                    [minx, y, minz],
+                    [maxx, y, minz],
+                    [maxx, y, maxz],
+                    [minx, y, maxz],
+                ],
+                dtype=np.float32,
+            )
+        else:
+            # XY plane at Z
+            z = float(minz) + t * float(maxz - minz)
+            vertices = np.array(
+                [
+                    [minx, miny, z],
+                    [maxx, miny, z],
+                    [maxx, maxy, z],
+                    [minx, maxy, z],
+                ],
+                dtype=np.float32,
+            )
+
         faces = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32)
 
         if self._slice_indicator_item is None:
