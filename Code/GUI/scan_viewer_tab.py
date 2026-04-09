@@ -170,7 +170,9 @@ class ScanViewerTab(QWidget):
 
         if has_source:
             self.spin_volume_downsample.setValue(volume_source.default_downsample_zyx)
-            self.volume_status_label.setText("Volume: lazy, not loaded")
+            self.volume_status_label.setText("Volume: preloading preview...")
+            # Preload in the background so the first toggle to volume is immediate.
+            self.reload_volume(show_after_load=False)
         else:
             self._showing_volume_mode = False
             self.viewer.set_volume_mode(False)

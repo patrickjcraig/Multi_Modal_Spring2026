@@ -1,7 +1,7 @@
 import numpy as np
 
 from PySide6.QtGui import QVector3D
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
 try:
     import pyqtgraph.opengl as gl
@@ -30,6 +30,7 @@ class VolumeRenderWidget(QWidget):
         self.meshes = {}
         self.show_pointcloud = True
         self.show_mesh = False
+        self._mesh_warmed_once = False
         self._overlay_text = ""
 
         if gl is None:
@@ -132,6 +133,12 @@ class VolumeRenderWidget(QWidget):
             return
 
         mesh_data = gl.MeshData(vertexes=vertices, faces=faces)
+        # Prime mesh normals now so the first mesh toggle does not pay this cost.
+        try:
+            mesh_data.faceNormals()
+            mesh_data.vertexNormals()
+        except Exception:
+            pass
         rgba = (0.55, 0.75, 1.0, 1.0) if color is None else (color[0], color[1], color[2], 1.0)
         item = gl.GLMeshItem(
             meshdata=mesh_data,
@@ -145,6 +152,19 @@ class VolumeRenderWidget(QWidget):
         self.meshes[name] = {"vertices": vertices, "item": item}
         self._update_reference_items()
         self._apply_visibility()
+        self._warmup_mesh_render(item)
+
+    def _warmup_mesh_render(self, item):
+        if not self.is_available() or self._mesh_warmed_once:
+            return
+
+        # Force one hidden warmup draw so shader/buffer setup happens now.
+        was_visible = bool(item.visible())
+        item.setVisible(True)
+        self._view.update()
+        QApplication.processEvents()
+        item.setVisible(was_visible)
+        self._mesh_warmed_once = True
 
     def clear_point_clouds(self):
         if not self.is_available():

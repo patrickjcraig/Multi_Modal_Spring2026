@@ -8,6 +8,7 @@ from makeGeometry import get_pcd_from_stl
 
 GLOBAL_TRANSFORM_RIGID = "rigid"
 GLOBAL_TRANSFORM_SIMILARITY = "similarity"
+MAX_REGISTRATION_POINTS = 120_000
 
 
 def uses_uniform_scaling(global_transform_model):
@@ -43,6 +44,16 @@ def preprocess_point_cloud(pcd, voxel_size):
         o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size * 5.0, max_nn=100),
     )
     return pcd_down, fpfh
+
+
+def _cap_point_count_for_registration(pcd, max_points=MAX_REGISTRATION_POINTS):
+    """Reduce very large clouds before feature matching to keep runtime/memory bounded."""
+    count = len(np.asarray(pcd.points))
+    if count <= int(max_points):
+        return pcd
+    keep_ratio = float(max_points) / float(max(count, 1))
+    keep_ratio = max(0.0001, min(1.0, keep_ratio))
+    return pcd.random_down_sample(keep_ratio)
 
 # Imports the point clouds, applies transformations to one of them, and runs preprocessing
 def import_dataset(voxel_size):
@@ -123,28 +134,17 @@ def run_full_registration(
     icp_step=1,
     global_transform_model=GLOBAL_TRANSFORM_RIGID,
 ):
-    """Run a full registration pipeline and optionally report intermediate steps.
+    """Run full registration and emit only stage-complete callbacks.
 
-    The behaviour is similar to the original function, but when a
-    ``step_callback`` is provided the RANSAC and ICP stages are executed using
-    the helpers in ``Registration/registration_steps.py``.  Those helpers
-    repeatedly invoke Open3D with increasing iteration limits and call back
-    for each increment.  ``step_callback`` is therefore called with three
-    arguments: ``(stage, iteration, data)`` where ``stage`` is an integer
-    (0=raw clouds, 1=ransac, 2=icp) and ``iteration`` is the cumulative
-    iteration count within that stage.  ``data`` is a dictionary containing
-    the objects produced at that iteration.
-
-    The parameters ``ransac_step`` and ``icp_step`` control how often the
-    callback occurs.  For example ``ransac_step=1000`` will report every
-    thousandth RANSAC iteration.
+    Callback stages are fixed to three entries:
+    0 = raw clouds, 1 = post-RANSAC, 2 = post-ICP.
     """
-    # import here to avoid circular dependency
-    from Registration import registration_steps
 
     if source_pcd is not None and target_pcd is not None:
         pcd1 = copy.deepcopy(source_pcd)
         pcd2 = copy.deepcopy(target_pcd)
+        pcd1 = _cap_point_count_for_registration(pcd1)
+        pcd2 = _cap_point_count_for_registration(pcd2)
         pcd1_down, pcd1_fpfh = preprocess_point_cloud(pcd1, voxel_size)
         pcd2_down, pcd2_fpfh = preprocess_point_cloud(pcd2, voxel_size)
     else:
@@ -154,58 +154,39 @@ def run_full_registration(
     if step_callback is not None:
         step_callback(0, 0, {"pcd1": pcd1, "pcd2": pcd2})
 
-    # stage 1: ransac
-    if step_callback is None:
-        result_ransac = run_RANSAC(
-            pcd1_down,
-            pcd2_down,
-            pcd1_fpfh,
-            pcd2_fpfh,
-            voxel_size,
-            ransac_dist_multiplier,
-            ransac_max_iter,
-            ransac_validation,
-            global_transform_model=global_transform_model,
-        )
-    else:
-        def r_cb(it, res):
-            step_callback(1, it, {"ransac": res, "total": ransac_max_iter})
-        result_ransac = registration_steps.iterative_ransac(
-            pcd1_down,
-            pcd2_down,
-            pcd1_fpfh,
-            pcd2_fpfh,
-            voxel_size,
-            ransac_dist_multiplier,
-            ransac_max_iter,
-            ransac_validation,
-            step=ransac_step,
-            callback=r_cb,
-            global_transform_model=global_transform_model,
+    # stage 1: built-in global RANSAC (single solve)
+    result_ransac = run_RANSAC(
+        pcd1_down,
+        pcd2_down,
+        pcd1_fpfh,
+        pcd2_fpfh,
+        voxel_size,
+        ransac_dist_multiplier,
+        ransac_max_iter,
+        ransac_validation,
+        global_transform_model=global_transform_model,
+    )
+    if step_callback is not None:
+        step_callback(
+            1,
+            1,
+            {"ransac": result_ransac, "total": 1, "configured_max_iter": ransac_max_iter},
         )
 
-    # stage 2: icp
-    if step_callback is None:
-        result_icp = run_ICP(
-            pcd1,
-            pcd2,
-            result_ransac.transformation,
-            voxel_size,
-            icp_dist_multiplier,
-            icp_max_iter,
-        )
-    else:
-        def i_cb(it, res):
-            step_callback(2, it, {"icp": res, "total": icp_max_iter})
-        result_icp = registration_steps.iterative_icp(
-            pcd1,
-            pcd2,
-            result_ransac.transformation,
-            voxel_size,
-            icp_dist_multiplier,
-            max_iterations=icp_max_iter,
-            step=icp_step,
-            callback=i_cb,
+    # stage 2: built-in local ICP (single solve)
+    result_icp = run_ICP(
+        pcd1,
+        pcd2,
+        result_ransac.transformation,
+        voxel_size,
+        icp_dist_multiplier,
+        icp_max_iter,
+    )
+    if step_callback is not None:
+        step_callback(
+            2,
+            1,
+            {"icp": result_icp, "total": 1, "configured_max_iter": icp_max_iter},
         )
 
     return {

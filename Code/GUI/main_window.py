@@ -237,6 +237,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
                     modality=record.modality,
                     path=record.path,
                     voxel_size_mm=record.voxel_size_mm,
+                    volume_source=record.volume_source,
                     metadata=new_metadata,
                 )
                 self.label_transform_status.setText(f"Created transformed copy of '{record.name}'.")

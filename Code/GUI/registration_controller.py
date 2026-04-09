@@ -20,6 +20,7 @@ class RegistrationController(QObject):
     def __init__(self, main_window):
         super().__init__()
         self.main = main_window
+        self.max_display_points = 80000
 
         self.reset_state()
 
@@ -142,24 +143,24 @@ class RegistrationController(QObject):
 
         max_point_count = max(point_counts, default=5000)
         dist_multiplier = 1.5
-        max_iterations = 100000
+        max_iterations = 40000
 
         if max_point_count >= 50000:
-            max_iterations = 300000
+            max_iterations = 80000
         elif max_point_count >= 20000:
-            max_iterations = 200000
+            max_iterations = 60000
         elif max_point_count >= 5000:
-            max_iterations = 150000
+            max_iterations = 45000
 
         if global_transform_model == "similarity":
             dist_multiplier = 2.0
-            max_iterations = int(max_iterations * 2.0)
+            max_iterations = int(max_iterations * 1.4)
 
         if len(effective_spacings) == 2:
             spacing_ratio = max(effective_spacings) / max(min(effective_spacings), 1e-9)
             if spacing_ratio > 1.25:
                 dist_multiplier += 0.2
-                max_iterations = int(max_iterations * 1.5)
+                max_iterations = int(max_iterations * 1.2)
 
         validation_iterations = max(1000, int(max_iterations * 0.02))
         validation_iterations = min(validation_iterations, 100000)
@@ -312,8 +313,18 @@ class RegistrationController(QObject):
 
     def _on_registration_step(self, stage, iteration, data):
         mw = self.main
-        self.step_history.append((stage, iteration, data))
-        self.current_step = len(self.step_history) - 1
+        # Keep exactly one snapshot per stage: raw, post-RANSAC, post-ICP.
+        replaced = False
+        for idx, (existing_stage, _existing_iter, _existing_data) in enumerate(self.step_history):
+            if existing_stage == stage:
+                self.step_history[idx] = (stage, iteration, data)
+                replaced = True
+                break
+        if not replaced:
+            self.step_history.append((stage, iteration, data))
+            self.step_history.sort(key=lambda row: row[0])
+
+        self.current_step = max(0, len(self.step_history) - 1)
 
         if stage == 0:
             self.pcd1 = data.get("pcd1")
@@ -333,15 +344,13 @@ class RegistrationController(QObject):
             mw.statusbar.showMessage("Loaded point clouds")
             overlay = ""
         elif stage == 1:
-            pct = int(iteration / total * 100) if total else 0
-            mw.progressBar.setValue(pct)
-            mw.statusbar.showMessage(f"{self.global_stage_name} {iteration}/{total}")
-            overlay = f"{self.global_stage_name} {iteration}/{total}"
+            mw.progressBar.setValue(60)
+            mw.statusbar.showMessage(f"{self.global_stage_name} complete")
+            overlay = f"{self.global_stage_name} complete"
         elif stage == 2:
-            pct = int(iteration / total * 100) if total else 0
-            mw.progressBar.setValue(pct)
-            mw.statusbar.showMessage(f"{self.local_stage_name} {iteration}/{total}")
-            overlay = f"{self.local_stage_name} {iteration}/{total}"
+            mw.progressBar.setValue(100)
+            mw.statusbar.showMessage(f"{self.local_stage_name} complete")
+            overlay = f"{self.local_stage_name} complete"
         record = mw.scans.get(self.result_scan_id)
         if record is not None:
             record.tab.viewer.set_overlay_text(overlay)
@@ -351,13 +360,10 @@ class RegistrationController(QObject):
 
     def _display_registration_results(self):
         mw = self.main
-        source_temp = copy.deepcopy(self.pcd1)
-        target_temp = copy.deepcopy(self.pcd2)
+        source_temp = self._prepare_display_cloud(self.pcd1)
+        target_temp = self._prepare_display_cloud(self.pcd2)
         source_temp.paint_uniform_color([1.0, 0.706, 0.0])
         target_temp.paint_uniform_color([0.0, 0.651, 0.929])
-
-        source_mesh_temp = copy.deepcopy(self.source_scan.mesh) if self.source_scan and self.source_scan.mesh is not None else None
-        target_mesh_temp = copy.deepcopy(self.target_scan.mesh) if self.target_scan and self.target_scan.mesh is not None else None
 
         if self.step_history:
             stage, iteration, payload = self.step_history[self.current_step]
@@ -370,24 +376,12 @@ class RegistrationController(QObject):
             trans = payload.get('ransac').transformation if payload.get('ransac') else None
             if trans is not None:
                 source_temp.transform(trans)
-                if source_mesh_temp is not None:
-                    source_mesh_temp.transform(trans)
-            total = payload.get('total', '?')
-            mw.label_step_info.setText(f"{self._describe_global_stage()} {iteration}/{total}")
+            mw.label_step_info.setText(f"{self._describe_global_stage()} complete")
         elif stage == 2:
             trans = payload.get('icp').transformation if payload.get('icp') else None
             if trans is not None:
                 source_temp.transform(trans)
-                if source_mesh_temp is not None:
-                    source_mesh_temp.transform(trans)
-            total = payload.get('total', '?')
-            mw.label_step_info.setText(f"{self.local_stage_name} {iteration}/{total}")
-
-        meshes = []
-        if source_mesh_temp is not None:
-            meshes.append(("Source Mesh", source_mesh_temp, (1.0, 0.706, 0.0)))
-        if target_mesh_temp is not None:
-            meshes.append(("Target Mesh", target_mesh_temp, (0.0, 0.651, 0.929)))
+            mw.label_step_info.setText(f"{self.local_stage_name} complete")
 
         info_text = " | ".join([
             f"Registration result",
@@ -408,7 +402,7 @@ class RegistrationController(QObject):
                 ("Source", source_temp, None),
                 ("Target", target_temp, None),
             ],
-            meshes=meshes,
+            meshes=[],
         )
 
     def _describe_global_stage(self):
@@ -421,6 +415,16 @@ class RegistrationController(QObject):
         linear = np.asarray(transformation, dtype=float)[:3, :3]
         column_norms = np.linalg.norm(linear, axis=0)
         return float(np.mean(column_norms))
+
+    def _prepare_display_cloud(self, pcd):
+        cloud = copy.deepcopy(pcd)
+        point_count = len(np.asarray(cloud.points))
+        if point_count <= self.max_display_points:
+            return cloud
+
+        keep_ratio = float(self.max_display_points) / float(max(point_count, 1))
+        keep_ratio = max(0.0001, min(1.0, keep_ratio))
+        return cloud.random_down_sample(keep_ratio)
 
     @staticmethod
     def _effective_spacing_mm(scan):

@@ -8,9 +8,9 @@ class ICPWorkerThread(QThread):
     """
     Worker thread for running ICP registration without blocking the UI.
 
-    This thread now emits step-by-step results via the ``step`` signal so that
-    the GUI can visualize intermediate states (original clouds, post-ransac
-    alignment, and post-ICP refinement) while the registration is executing.
+    This thread emits stage-complete snapshots via the ``step`` signal so that
+    the GUI can visualize three states: original clouds, post-RANSAC, and
+    post-ICP.
     """
     finished = Signal(dict)  # Signal emitted when registration is complete
     error = Signal(str)       # Signal emitted if an error occurs
