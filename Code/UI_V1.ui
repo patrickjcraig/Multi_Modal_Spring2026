@@ -767,6 +767,7 @@
       <string>Import</string>
      </property>
      <addaction name="actionImport_XRay"/>
+     <addaction name="actionImport_SAM"/>
     </widget>
     <addaction name="actionSave_Workspace"/>
     <addaction name="actionLoad_Workspace"/>
@@ -820,6 +821,11 @@
   <action name="actionImport_XRay">
    <property name="text">
     <string>X-Ray</string>
+   </property>
+  </action>
+  <action name="actionImport_SAM">
+   <property name="text">
+    <string>SAM</string>
    </property>
   </action>
   <action name="actionSet_Source">

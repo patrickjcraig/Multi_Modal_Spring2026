@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class XRayImportParams:
+class VolumeImportParams:
     import_type: str
     path: str
     voxel_size_mm: float
@@ -11,3 +11,7 @@ class XRayImportParams:
     pcd_points: int
     level: int
     dataset_path: str | None = None
+
+
+XRayImportParams = VolumeImportParams
+SAMImportParams = VolumeImportParams

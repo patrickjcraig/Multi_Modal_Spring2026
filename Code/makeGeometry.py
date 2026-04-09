@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 import open3d as o3d
 import h5py
+import cv2
 
 import tifffile as tiff
 import dask.array as da
@@ -49,13 +50,48 @@ def _sorted_tiffs(folder):
     return [os.path.join(folder, f) for f in files]
 
 
+def _sorted_pngs(folder):
+    files = [f for f in os.listdir(folder) if f.lower().endswith(".png")]
+    files.sort()
+    return [os.path.join(folder, f) for f in files]
+
+
 def _lazy_slice(path):
-    return tiff.imread(path)
+    suffix = os.path.splitext(path)[1].lower()
+    if suffix in {".tif", ".tiff"}:
+        return tiff.imread(path)
+
+    if suffix == ".png":
+        image = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        if image is None:
+            raise FileNotFoundError(f"Unable to read image slice '{path}'")
+        if image.ndim == 3:
+            if image.shape[2] == 1:
+                image = image[:, :, 0]
+            elif image.shape[2] == 3:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            elif image.shape[2] == 4:
+                image = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+            else:
+                raise ValueError(f"Unsupported PNG channel count {image.shape[2]} in '{path}'")
+        if image.ndim != 2:
+            raise ValueError(f"Expected a 2D grayscale slice from '{path}', got shape {tuple(int(v) for v in image.shape)}")
+        return image
+
+    raise ValueError(f"Unsupported slice extension '{suffix}'")
 
 
-def _make_lazy_volume_zyx(folder):
-    paths = _sorted_tiffs(folder)
+def _make_lazy_volume_zyx(folder, source_type="tiff_stack"):
+    if source_type == "tiff_stack":
+        paths = _sorted_tiffs(folder)
+    elif source_type == "png_stack":
+        paths = _sorted_pngs(folder)
+    else:
+        raise ValueError(f"Unsupported stack source type '{source_type}'")
+
     if not paths:
+        if source_type == "png_stack":
+            raise FileNotFoundError("No PNG files found in folder")
         raise FileNotFoundError("No tif/tiff files found in folder")
 
     a0 = _lazy_slice(paths[0])
@@ -193,6 +229,20 @@ def inspect_tiff_stack(folder_path: str):
     }
 
 
+def inspect_png_stack(folder_path: str):
+    """Return shape/dtype metadata without loading the full PNG stack."""
+    paths = _sorted_pngs(folder_path)
+    if not paths:
+        raise FileNotFoundError("No PNG files found in folder")
+
+    sample = _lazy_slice(paths[0])
+    return {
+        "shape_zyx": (len(paths), *sample.shape),
+        "dtype": str(sample.dtype),
+        "slice_count": len(paths),
+    }
+
+
 def inspect_array_volume(file_path: str, file_type: str, dataset_path: str | None = None):
     file_type = file_type.strip().lower()
 
@@ -240,12 +290,43 @@ def _normalize_volume_to_uint8(volume):
     return np.ascontiguousarray(scaled.astype(np.uint8, copy=False))
 
 
+def _resolve_surface_level(sub_zyx, level, default_mode="percentile"):
+    if sub_zyx.size == 0:
+        raise ValueError("ROI produced an empty volume")
+
+    vmin = float(np.min(sub_zyx))
+    vmax = float(np.max(sub_zyx))
+    if not np.isfinite(vmin) or not np.isfinite(vmax):
+        raise ValueError("ROI contains non-finite values")
+    if vmax <= vmin:
+        raise ValueError(
+            f"ROI intensity range is flat ({vmin:g} to {vmax:g}); choose a different ROI or preprocess the SAM stack."
+        )
+
+    if level is None:
+        if default_mode == "midpoint":
+            candidate = vmin + 0.5 * (vmax - vmin)
+        else:
+            candidate = float(np.percentile(sub_zyx, 99.5))
+    else:
+        candidate = float(level)
+
+    if not (vmin < candidate < vmax):
+        fallback = vmin + 0.5 * (vmax - vmin)
+        print(
+            f"Requested marching-cubes level {candidate:g} is outside the data range "
+            f"[{vmin:g}, {vmax:g}]; using {fallback:g} instead."
+        )
+        candidate = fallback
+
+    return candidate
+
+
 def _mesh_from_subvolume_zyx(sub_zyx, voxel_size_mm, downsample_zyx, bounds_zyx, level):
     if sub_zyx.size == 0:
         raise ValueError("ROI produced an empty volume")
 
-    if level is None:
-        level = float(np.percentile(sub_zyx, 99.5))
+    level = _resolve_surface_level(sub_zyx, level, default_mode="percentile")
 
     s = voxel_size_mm * downsample_zyx
     spacing = (s, s, s)
@@ -285,8 +366,8 @@ def load_ct_volume_preview(
     downsample_zyx = max(1, int(downsample_zyx))
     max_preview_voxels = max(1, int(max_preview_voxels))
 
-    if volume_source.source_type == "tiff_stack":
-        vol = _make_lazy_volume_zyx(volume_source.path)
+    if volume_source.source_type in {"tiff_stack", "png_stack"}:
+        vol = _make_lazy_volume_zyx(volume_source.path, volume_source.source_type)
         effective_downsample = downsample_zyx
         vol_ds = vol[::effective_downsample, ::effective_downsample, ::effective_downsample]
 
@@ -393,11 +474,34 @@ def get_mesh_from_ct_stack(
       - run marching cubes on that subvolume
     """
 
-    vol = _make_lazy_volume_zyx(folder_path)               # dask (Z,Y,X)
+    vol = _make_lazy_volume_zyx(folder_path, "tiff_stack")               # dask (Z,Y,X)
     vol_ds = vol[::downsample_zyx, ::downsample_zyx, ::downsample_zyx]
 
     z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, crop_zyx)
     sub = vol_ds[z0:z1, y0:y1, x0:x1].compute()            # numpy array (small)
+
+    return _mesh_from_subvolume_zyx(
+        sub_zyx=sub,
+        voxel_size_mm=voxel_size_mm,
+        downsample_zyx=downsample_zyx,
+        bounds_zyx=(z0, z1, y0, y1, x0, x1),
+        level=level,
+    )
+
+
+def get_mesh_from_png_stack(
+    folder_path: str,
+    voxel_size_mm: float = 0.006937965888099794,
+    downsample_zyx: int = 2,
+    crop_zyx: tuple[int, int, int] = (256, 256, 256),
+    level: float | None = None,
+):
+    vol = _make_lazy_volume_zyx(folder_path, "png_stack")
+    vol_ds = vol[::downsample_zyx, ::downsample_zyx, ::downsample_zyx]
+
+    z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, crop_zyx)
+    sub = vol_ds[z0:z1, y0:y1, x0:x1].compute()
+    level = _resolve_surface_level(sub, level, default_mode="midpoint")
 
     return _mesh_from_subvolume_zyx(
         sub_zyx=sub,

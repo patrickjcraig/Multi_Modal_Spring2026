@@ -5,9 +5,12 @@ from makeGeometry import (
     VolumeSource,
     get_mesh_from_array_volume,
     get_mesh_from_ct_stack,
+    get_mesh_from_png_stack,
     inspect_array_volume,
+    inspect_png_stack,
     inspect_tiff_stack,
 )
+from GUI.dialogs.sam_import_dialog import SAMImportDialog
 from GUI.dialogs.xray_import_dialog import XRayImportDialog
 
 
@@ -100,6 +103,13 @@ class ImportController:
             params = dialog.get_import_params()
             self.import_xray_data(params)
 
+    def open_sam_dialog(self):
+        dialog = SAMImportDialog(self.main)
+
+        if dialog.exec():
+            params = dialog.get_import_params()
+            self.import_sam_data(params)
+
     def import_xray_data(self, params):
         mw = self.main
         if params.import_type == "tiff stack folder":
@@ -120,6 +130,20 @@ class ImportController:
 
         else:
             mw.statusbar.showMessage(f"Unknown import type: {params.import_type}")
+
+    def import_sam_data(self, params):
+        mw = self.main
+        if params.import_type == "png stack folder":
+            self.load_png_stack(
+                folder_path=params.path,
+                voxel_size_mm=params.voxel_size_mm,
+                roi_xyz=params.roi_xyz,
+                downsampling=params.downsampling,
+                pcd_points=params.pcd_points,
+                level=params.level,
+            )
+        else:
+            mw.statusbar.showMessage(f"Unknown SAM import type: {params.import_type}")
 
     def load_h5(self, params):
         self._load_array_file(params, file_type="h5")
@@ -191,6 +215,71 @@ class ImportController:
         except Exception as e:
             QMessageBox.critical(mw, "Import Error", str(e))
             mw.statusbar.showMessage("Error importing TIFF stack.")
+
+    def load_png_stack(self, folder_path, voxel_size_mm, roi_xyz, downsampling, pcd_points, level=None):
+        mw = self.main
+        try:
+            mw.statusbar.showMessage("Loading SAM PNG stack...")
+
+            crop_zyx = (roi_xyz[2], roi_xyz[1], roi_xyz[0])
+            stack_info = inspect_png_stack(folder_path)
+
+            mesh, level = get_mesh_from_png_stack(
+                folder_path=folder_path,
+                voxel_size_mm=voxel_size_mm,
+                downsample_zyx=downsampling,
+                crop_zyx=crop_zyx,
+                level=level,
+            )
+            volume_source = VolumeSource(
+                path=folder_path,
+                source_type="png_stack",
+                voxel_size_mm=voxel_size_mm,
+                crop_zyx=crop_zyx,
+                default_downsample_zyx=downsampling,
+            )
+            pcd = mesh.sample_points_poisson_disk(number_of_points=pcd_points)
+
+            print("Imported SAM PNG stack from:", folder_path)
+            print("Voxel size (mm):", voxel_size_mm)
+            print("ROI XYZ:", roi_xyz)
+            print("Crop ZYX:", crop_zyx)
+            print("Downsampling:", downsampling)
+            print("Point count:", pcd_points)
+            print("MC level:", level)
+
+            scan_id = mw.add_scan_tab(
+                name=f"Imported SAM {mw.scanTabs.count() + 1}",
+                pcd=pcd,
+                mesh=mesh,
+                modality="sam-png-stack",
+                path=folder_path,
+                voxel_size_mm=voxel_size_mm,
+                metadata={
+                    "Voxel (mm)": voxel_size_mm,
+                    "ROI XYZ": roi_xyz,
+                    "Downsampling": downsampling,
+                    "Points": pcd_points,
+                    "Mesh source": "SAM PNG stack marching cubes",
+                    "MC level": level,
+                    "Stack shape ZYX": stack_info["shape_zyx"],
+                    "Stack dtype": stack_info["dtype"],
+                    "3D volume": "lazy preview available",
+                },
+                volume_source=volume_source,
+            )
+            if mw.source_scan_id is None:
+                mw.source_scan_id = scan_id
+            elif mw.target_scan_id is None:
+                mw.target_scan_id = scan_id
+            mw._sync_selection_ui()
+            mw.registration.apply_suggested_ransac_parameters(show_status=False)
+
+            mw.statusbar.showMessage("SAM PNG stack imported successfully.")
+
+        except Exception as e:
+            QMessageBox.critical(mw, "Import Error", str(e))
+            mw.statusbar.showMessage("Error importing SAM PNG stack.")
 
     def _load_array_file(self, params, file_type):
         mw = self.main

@@ -90,6 +90,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.actionLoad_Workspace.triggered.connect(self.workspace_controller.load)
 
         self.actionImport_XRay.triggered.connect(self.importer.open_xray_dialog)
+        self.actionImport_SAM.triggered.connect(self.importer.open_sam_dialog)
         self.toolButton_4.clicked.connect(self.mark_current_as_source)
         self.toolButton_5.clicked.connect(self.mark_current_as_target)
         self.scanTabs.currentChanged.connect(self._on_tab_changed)
