@@ -12,6 +12,7 @@ and rendering techniques.
 
 import os
 import numpy as np
+from defaults import DEFAULT_VOXEL_SIZE_MM
 from makeGeometry import get_pcd_from_ct_stack
 from GUI.icp_worker import PointCloudViewerWindow
 
@@ -30,7 +31,7 @@ def example_view_tif_stack_with_mesh():
     # get_pcd_from_ct_stack returns (pcd, mesh, level)
     pcd, mesh, level = get_pcd_from_ct_stack(
         folder_path=tiff_folder,
-        voxel_size_mm=0.006937965888099794,  # Adjust based on your scanning parameters
+        voxel_size_mm=DEFAULT_VOXEL_SIZE_MM,  # Adjust based on your scanning parameters
         downsample_zyx=4,      # Downsample by factor of 4 in Z, Y, X
         crop_zyx=(256, 256, 256),  # Crop to 256x256x256 region (can be adjusted)
         level=None,            # Auto-detect iso-level (None) or specify manually

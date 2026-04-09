@@ -194,7 +194,7 @@ class Ui_XRayDialog(object):
 #if QT_CONFIG(tooltip)
         self.line_voxel_size.setToolTip(QCoreApplication.translate("XRayDialog", u"Voxel size in millimeters (example: 0.0004631795)", None))
 #endif // QT_CONFIG(tooltip)
-        self.line_voxel_size.setText(QCoreApplication.translate("XRayDialog", u"0.006937965888099794", None))
+        self.line_voxel_size.setText(QCoreApplication.translate("XRayDialog", u"0.0004631795192807952", None))
         self.line_voxel_size.setPlaceholderText(QCoreApplication.translate("XRayDialog", u"Voxel size in mm", None))
         self.label_import_type.setText(QCoreApplication.translate("XRayDialog", u"Import Type", None))
         self.label_file_folder.setText(QCoreApplication.translate("XRayDialog", u"File / Folder", None))

@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox
 
+from defaults import DEFAULT_VOXEL_SIZE_MM
 from makeGeometry import inspect_png_stack
 
 from .ui_sam_import_dialog import Ui_SAMImportDialog
@@ -21,7 +22,7 @@ class SAMImportDialog(QDialog, Ui_SAMImportDialog):
         self.line_path.setClearButtonEnabled(True)
         self.line_voxel_size.setClearButtonEnabled(True)
         self.line_voxel_size.setAlignment(Qt.AlignRight)
-        self.line_voxel_size.setText("0.006937965888099794")
+        self.line_voxel_size.setText(f"{DEFAULT_VOXEL_SIZE_MM}")
         self.line_voxel_size.setPlaceholderText("Voxel size in mm")
         self.line_voxel_size.setToolTip("Voxel size in millimeters (example: 0.0004631795)")
 

@@ -11,6 +11,8 @@ import dask.array as da
 from dask import delayed
 from skimage.measure import marching_cubes
 
+from defaults import DEFAULT_VOXEL_SIZE_MM
+
 
 @dataclass(frozen=True)
 class VolumeSource:
@@ -459,7 +461,7 @@ def load_ct_volume_preview(
 
 def get_mesh_from_ct_stack(
     folder_path: str,
-    voxel_size_mm: float = 0.006937965888099794,
+    voxel_size_mm: float = DEFAULT_VOXEL_SIZE_MM,
     downsample_zyx: int = 2,                      
     crop_zyx: tuple[int, int, int] = (256, 256, 256),
     level: float | None = None,
@@ -491,7 +493,7 @@ def get_mesh_from_ct_stack(
 
 def get_mesh_from_png_stack(
     folder_path: str,
-    voxel_size_mm: float = 0.006937965888099794,
+    voxel_size_mm: float = DEFAULT_VOXEL_SIZE_MM,
     downsample_zyx: int = 2,
     crop_zyx: tuple[int, int, int] = (256, 256, 256),
     level: float | None = None,
@@ -515,7 +517,7 @@ def get_mesh_from_png_stack(
 def get_mesh_from_array_volume(
     file_path: str,
     file_type: str,
-    voxel_size_mm: float = 0.006937965888099794,
+    voxel_size_mm: float = DEFAULT_VOXEL_SIZE_MM,
     downsample_zyx: int = 2,
     crop_zyx: tuple[int, int, int] = (256, 256, 256),
     level: float | None = None,
@@ -547,7 +549,7 @@ def get_mesh_from_array_volume(
 
 def get_pcd_from_ct_stack(
     folder_path: str,
-    voxel_size_mm: float = 0.006937965888099794,
+    voxel_size_mm: float = DEFAULT_VOXEL_SIZE_MM,
     downsample_zyx: int = 2,
     crop_zyx: tuple[int, int, int] = (256, 256, 256),
     level: float | None = None,

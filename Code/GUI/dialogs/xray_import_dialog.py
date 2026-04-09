@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox
 
+from defaults import DEFAULT_VOXEL_SIZE_MM
 from .xray_file_import_dialog import XRayFileImportDialog
 from .xray_import_types import XRayImportParams
 from .ui_xray_dialog import Ui_XRayDialog
@@ -23,6 +24,7 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
         self.line_path.setClearButtonEnabled(True)
         self.line_voxel_size.setClearButtonEnabled(True)
         self.line_voxel_size.setAlignment(Qt.AlignRight)
+        self.line_voxel_size.setText(f"{DEFAULT_VOXEL_SIZE_MM}")
 
         # Validate voxel size as a positive decimal number typed by the user.
         # StandardNotation avoids scientific notation entry like 1e-9.
@@ -67,7 +69,7 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
         return XRayImportParams(
             import_type=self.combo_import_type.currentText().strip().lower(),
             path=self.line_path.text().strip(),
-            voxel_size_mm=float(self.line_voxel_size.text().strip() or 0.006937965888099794),
+            voxel_size_mm=float(self.line_voxel_size.text().strip() or DEFAULT_VOXEL_SIZE_MM),
             roi_xyz=(
                 self.spin_roi_x.value(),
                 self.spin_roi_y.value(),
