@@ -35,6 +35,8 @@ class RegistrationController(QObject):
         self.global_transform_model = "rigid"
         self.global_stage_name = "Global RANSAC"
         self.local_stage_name = "Local ICP"
+        self._display_source_mesh_base = None
+        self._display_target_mesh_base = None
 
     # ------------------------------------------------------------------
     # Public methods hooked to UI signals
@@ -87,15 +89,30 @@ class RegistrationController(QObject):
             f"{self.source_scan.name} -> {self.target_scan.name}"
         )
 
+        self._display_source_mesh_base = self._prepare_display_mesh(
+            self.source_scan.mesh if self.source_scan is not None else None
+        )
+        self._display_target_mesh_base = self._prepare_display_mesh(
+            self.target_scan.mesh if self.target_scan is not None else None
+        )
+
+        result_volume_source = None
+        if self.target_scan is not None and self.target_scan.volume_source is not None:
+            result_volume_source = self.target_scan.volume_source
+        elif self.source_scan is not None:
+            result_volume_source = self.source_scan.volume_source
+
         self.result_scan_id = mw.add_scan_tab(
             name=f"Registration {self.source_scan.name} -> {self.target_scan.name}",
             modality="registration-result",
             is_result=True,
+            volume_source=result_volume_source,
             metadata={
                 "Source": self.source_scan.name,
                 "Target": self.target_scan.name,
                 "Global stage": self._describe_global_stage(),
                 "Local stage": self.local_stage_name,
+                "3D volume": "reference scan volume attached",
             },
         )
 
@@ -365,6 +382,9 @@ class RegistrationController(QObject):
         source_temp.paint_uniform_color([1.0, 0.706, 0.0])
         target_temp.paint_uniform_color([0.0, 0.651, 0.929])
 
+        source_mesh_temp = copy.deepcopy(self._display_source_mesh_base) if self._display_source_mesh_base is not None else None
+        target_mesh_temp = copy.deepcopy(self._display_target_mesh_base) if self._display_target_mesh_base is not None else None
+
         if self.step_history:
             stage, iteration, payload = self.step_history[self.current_step]
         else:
@@ -376,12 +396,22 @@ class RegistrationController(QObject):
             trans = payload.get('ransac').transformation if payload.get('ransac') else None
             if trans is not None:
                 source_temp.transform(trans)
+                if source_mesh_temp is not None:
+                    source_mesh_temp.transform(trans)
             mw.label_step_info.setText(f"{self._describe_global_stage()} complete")
         elif stage == 2:
             trans = payload.get('icp').transformation if payload.get('icp') else None
             if trans is not None:
                 source_temp.transform(trans)
+                if source_mesh_temp is not None:
+                    source_mesh_temp.transform(trans)
             mw.label_step_info.setText(f"{self.local_stage_name} complete")
+
+        meshes = []
+        if source_mesh_temp is not None:
+            meshes.append(("Source Mesh", source_mesh_temp, (1.0, 0.706, 0.0)))
+        if target_mesh_temp is not None:
+            meshes.append(("Target Mesh", target_mesh_temp, (0.0, 0.651, 0.929)))
 
         info_text = " | ".join([
             f"Registration result",
@@ -402,7 +432,7 @@ class RegistrationController(QObject):
                 ("Source", source_temp, None),
                 ("Target", target_temp, None),
             ],
-            meshes=[],
+            meshes=meshes,
         )
 
     def _describe_global_stage(self):
@@ -425,6 +455,20 @@ class RegistrationController(QObject):
         keep_ratio = float(self.max_display_points) / float(max(point_count, 1))
         keep_ratio = max(0.0001, min(1.0, keep_ratio))
         return cloud.random_down_sample(keep_ratio)
+
+    def _prepare_display_mesh(self, mesh, max_triangles=120000):
+        if mesh is None:
+            return None
+
+        prepared = copy.deepcopy(mesh)
+        try:
+            triangle_count = len(np.asarray(prepared.triangles))
+            if triangle_count > int(max_triangles):
+                prepared = prepared.simplify_quadric_decimation(int(max_triangles))
+            prepared.compute_vertex_normals()
+        except Exception:
+            return copy.deepcopy(mesh)
+        return prepared
 
     @staticmethod
     def _effective_spacing_mm(scan):
