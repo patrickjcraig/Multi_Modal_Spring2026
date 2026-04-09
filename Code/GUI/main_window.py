@@ -98,6 +98,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.btn_show_transformation_tools.clicked.connect(self.show_transformation_tools)
         self.actionRegistration_3.triggered.connect(self.show_registration_tools)
         self.actionTransformation_2.triggered.connect(self.show_transformation_tools)
+        self.actionSlice_Viewer.triggered.connect(self.toggle_slice_viewer)
         self.combo_global_transform_model.currentIndexChanged.connect(
             lambda _index: self.registration.apply_suggested_ransac_parameters(show_status=True)
         )
@@ -150,6 +151,20 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.toolsStack.setCurrentWidget(self.page_transformation_tools)
         self.btn_show_transformation_tools.setChecked(True)
         self._update_transform_status()
+
+    def toggle_slice_viewer(self):
+        record = self.current_scan()
+        if record is None:
+            self.statusbar.showMessage("Select a scan tab before opening Slice Viewer.")
+            return
+
+        record.tab.toggle_slice_viewer()
+        if record.tab.is_slice_viewer_enabled():
+            self.statusbar.showMessage(
+                "Slice Viewer enabled. Use the slider or Up/Down keys to move through slices."
+            )
+        else:
+            self.statusbar.showMessage("Slice Viewer disabled.")
 
     def reset_affine_matrix_to_identity(self):
         self._set_affine_matrix_ui(np.eye(4, dtype=float))

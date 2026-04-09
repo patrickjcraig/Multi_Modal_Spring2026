@@ -214,24 +214,24 @@
         </property>
         <item>
          <widget class="QToolButton" name="btn_show_registration_tools">
+          <property name="text">
+           <string>Register</string>
+          </property>
           <property name="checkable">
            <bool>true</bool>
           </property>
           <property name="checked">
            <bool>true</bool>
           </property>
-          <property name="text">
-           <string>Register</string>
-          </property>
          </widget>
         </item>
         <item>
          <widget class="QToolButton" name="btn_show_transformation_tools">
-          <property name="checkable">
-           <bool>true</bool>
-          </property>
           <property name="text">
            <string>Transform</string>
+          </property>
+          <property name="checkable">
+           <bool>true</bool>
           </property>
          </widget>
         </item>
@@ -619,38 +619,67 @@
           </item>
           <item>
            <widget class="QLabel" name="label_transform_help">
-            <property name="wordWrap">
-             <bool>true</bool>
-            </property>
             <property name="text">
              <string>Enter a 4x4 affine matrix for the current scan.</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
             </property>
            </widget>
           </item>
           <item>
            <layout class="QGridLayout" name="layout_affine_matrix">
-            <property name="horizontalSpacing">
+            <property name="spacing">
              <number>3</number>
             </property>
-            <property name="verticalSpacing">
-             <number>3</number>
-            </property>
-            <item row="0" column="0"><widget class="QDoubleSpinBox" name="matrix_00"/></item>
-            <item row="0" column="1"><widget class="QDoubleSpinBox" name="matrix_01"/></item>
-            <item row="0" column="2"><widget class="QDoubleSpinBox" name="matrix_02"/></item>
-            <item row="0" column="3"><widget class="QDoubleSpinBox" name="matrix_03"/></item>
-            <item row="1" column="0"><widget class="QDoubleSpinBox" name="matrix_10"/></item>
-            <item row="1" column="1"><widget class="QDoubleSpinBox" name="matrix_11"/></item>
-            <item row="1" column="2"><widget class="QDoubleSpinBox" name="matrix_12"/></item>
-            <item row="1" column="3"><widget class="QDoubleSpinBox" name="matrix_13"/></item>
-            <item row="2" column="0"><widget class="QDoubleSpinBox" name="matrix_20"/></item>
-            <item row="2" column="1"><widget class="QDoubleSpinBox" name="matrix_21"/></item>
-            <item row="2" column="2"><widget class="QDoubleSpinBox" name="matrix_22"/></item>
-            <item row="2" column="3"><widget class="QDoubleSpinBox" name="matrix_23"/></item>
-            <item row="3" column="0"><widget class="QDoubleSpinBox" name="matrix_30"/></item>
-            <item row="3" column="1"><widget class="QDoubleSpinBox" name="matrix_31"/></item>
-            <item row="3" column="2"><widget class="QDoubleSpinBox" name="matrix_32"/></item>
-            <item row="3" column="3"><widget class="QDoubleSpinBox" name="matrix_33"/></item>
+            <item row="0" column="0">
+             <widget class="QDoubleSpinBox" name="matrix_00"/>
+            </item>
+            <item row="0" column="1">
+             <widget class="QDoubleSpinBox" name="matrix_01"/>
+            </item>
+            <item row="0" column="2">
+             <widget class="QDoubleSpinBox" name="matrix_02"/>
+            </item>
+            <item row="0" column="3">
+             <widget class="QDoubleSpinBox" name="matrix_03"/>
+            </item>
+            <item row="1" column="0">
+             <widget class="QDoubleSpinBox" name="matrix_10"/>
+            </item>
+            <item row="1" column="1">
+             <widget class="QDoubleSpinBox" name="matrix_11"/>
+            </item>
+            <item row="1" column="2">
+             <widget class="QDoubleSpinBox" name="matrix_12"/>
+            </item>
+            <item row="1" column="3">
+             <widget class="QDoubleSpinBox" name="matrix_13"/>
+            </item>
+            <item row="2" column="0">
+             <widget class="QDoubleSpinBox" name="matrix_20"/>
+            </item>
+            <item row="2" column="1">
+             <widget class="QDoubleSpinBox" name="matrix_21"/>
+            </item>
+            <item row="2" column="2">
+             <widget class="QDoubleSpinBox" name="matrix_22"/>
+            </item>
+            <item row="2" column="3">
+             <widget class="QDoubleSpinBox" name="matrix_23"/>
+            </item>
+            <item row="3" column="0">
+             <widget class="QDoubleSpinBox" name="matrix_30"/>
+            </item>
+            <item row="3" column="1">
+             <widget class="QDoubleSpinBox" name="matrix_31"/>
+            </item>
+            <item row="3" column="2">
+             <widget class="QDoubleSpinBox" name="matrix_32"/>
+            </item>
+            <item row="3" column="3">
+             <widget class="QDoubleSpinBox" name="matrix_33"/>
+            </item>
            </layout>
           </item>
           <item>
@@ -691,11 +720,11 @@
           </item>
           <item>
            <widget class="QLabel" name="label_transform_status">
-            <property name="wordWrap">
-             <bool>true</bool>
-            </property>
             <property name="text">
              <string>Select a scan tab to transform.</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
             </property>
            </widget>
           </item>
@@ -726,7 +755,7 @@
      <x>0</x>
      <y>0</y>
      <width>1600</width>
-     <height>33</height>
+     <height>23</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFiles">
@@ -754,11 +783,13 @@
     <property name="title">
      <string>Help</string>
     </property>
+    <addaction name="actionControls_Shortcuts"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
      <string>View</string>
     </property>
+    <addaction name="actionSlice_Viewer"/>
    </widget>
    <addaction name="menuFiles"/>
    <addaction name="menuTools"/>
@@ -834,6 +865,16 @@
   <action name="actionRegistration_3">
    <property name="text">
     <string>Registration</string>
+   </property>
+  </action>
+  <action name="actionSlice_Viewer">
+   <property name="text">
+    <string>Slice Viewer</string>
+   </property>
+  </action>
+  <action name="actionControls_Shortcuts">
+   <property name="text">
+    <string>Controls/Shortcuts</string>
    </property>
   </action>
  </widget>

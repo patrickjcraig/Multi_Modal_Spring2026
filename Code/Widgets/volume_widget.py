@@ -21,6 +21,8 @@ class VolumeRenderWidget(QWidget):
         self._volume_item = None
         self._grid_item = None
         self._axes_item = None
+        self._slice_indicator_item = None
+        self._slice_indicator_visible = False
         self._volume_loaded = False
         self._volume_mode = False
 
@@ -183,6 +185,68 @@ class VolumeRenderWidget(QWidget):
 
         if self._volume_item is not None:
             self._volume_item.setVisible(self._volume_mode and self._volume_loaded)
+
+        if self._slice_indicator_item is not None:
+            self._slice_indicator_item.setVisible(self._slice_indicator_visible)
+
+    def set_slice_indicator_visible(self, visible):
+        self._slice_indicator_visible = bool(visible)
+        if self._slice_indicator_item is not None:
+            self._slice_indicator_item.setVisible(self._slice_indicator_visible)
+
+    def clear_slice_indicator(self):
+        if not self.is_available() or self._slice_indicator_item is None:
+            self._slice_indicator_visible = False
+            return
+        self._slice_indicator_item.setVisible(False)
+        self._slice_indicator_visible = False
+
+    def set_slice_indicator(self, slice_index, slice_count):
+        if not self.is_available() or gl is None:
+            return
+        if int(slice_count) <= 0:
+            self.clear_slice_indicator()
+            return
+
+        bounds = self.get_scene_bounds()
+        if bounds is None:
+            self.clear_slice_indicator()
+            return
+
+        (minx, miny, minz), (maxx, maxy, maxz) = bounds
+        slice_count = max(1, int(slice_count))
+        slice_index = max(0, min(slice_count - 1, int(slice_index)))
+
+        dz = float(maxz - minz)
+        z = float(minz) + ((float(slice_index) + 0.5) / float(slice_count)) * dz
+
+        vertices = np.array(
+            [
+                [minx, miny, z],
+                [maxx, miny, z],
+                [maxx, maxy, z],
+                [minx, maxy, z],
+            ],
+            dtype=np.float32,
+        )
+        faces = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32)
+
+        if self._slice_indicator_item is None:
+            mesh_data = gl.MeshData(vertexes=vertices, faces=faces)
+            self._slice_indicator_item = gl.GLMeshItem(
+                meshdata=mesh_data,
+                smooth=False,
+                drawFaces=True,
+                drawEdges=True,
+                color=(1.0, 1.0, 1.0, 0.20),
+                shader="shaded",
+            )
+            self._view.addItem(self._slice_indicator_item)
+        else:
+            self._slice_indicator_item.setMeshData(vertexes=vertices, faces=faces)
+
+        self._slice_indicator_visible = True
+        self._slice_indicator_item.setVisible(True)
 
     def get_scene_bounds(self):
         blocks = [d["points"] for d in self.point_clouds.values() if len(d["points"]) > 0]

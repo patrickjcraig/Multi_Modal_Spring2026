@@ -3,6 +3,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -10,6 +11,7 @@ from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut
 
 from makeGeometry import load_ct_volume_preview
+from GUI.slice_viewer_tab import SliceViewerTab
 from Widgets.volume_widget import VolumeRenderWidget
 
 
@@ -49,6 +51,8 @@ class ScanViewerTab(QWidget):
         self._volume_worker = None
         self._last_volume_shape_xyz = None
         self._showing_volume_mode = False
+        self._volume_xyz = None
+        self._slice_viewer_enabled = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -86,10 +90,28 @@ class ScanViewerTab(QWidget):
         controls.addWidget(self.volume_status_label, 1)
         layout.addLayout(controls)
 
+        self.viewer_tabs = QTabWidget(self)
+        self.viewer_tabs.setTabPosition(QTabWidget.North)
+        layout.addWidget(self.viewer_tabs, 1)
+
+        # 3D view page
+        self.page_3d_view = QWidget(self.viewer_tabs)
+        page_3d_layout = QVBoxLayout(self.page_3d_view)
+        page_3d_layout.setContentsMargins(0, 0, 0, 0)
+        page_3d_layout.setSpacing(6)
+
         # Single pyqtgraph renderer for both geometry and volume
-        self.viewer = VolumeRenderWidget(self)
+        self.viewer = VolumeRenderWidget(self.page_3d_view)
         self.volume_viewer = self.viewer
-        layout.addWidget(self.viewer, 1)
+        page_3d_layout.addWidget(self.viewer, 1)
+
+        self.slice_viewer = SliceViewerTab(self.viewer_tabs, on_slice_changed=self._on_slice_changed)
+        page_3d_layout.addWidget(self.slice_viewer.controls_frame)
+
+        self.viewer_tabs.addTab(self.page_3d_view, "3D View")
+
+        self.viewer_tabs.addTab(self.slice_viewer.page, "2D Slice")
+        self.viewer_tabs.setTabEnabled(1, False)
 
         self.btn_toggle_volume.clicked.connect(self.toggle_volume_view)
         self.btn_toggle_mesh.clicked.connect(self.toggle_pointcloud_mesh_view)
@@ -104,6 +126,14 @@ class ScanViewerTab(QWidget):
         self.shortcut_toggle_mesh = QShortcut(QKeySequence("Ctrl+M"), self)
         self.shortcut_toggle_mesh.setContext(Qt.WidgetWithChildrenShortcut)
         self.shortcut_toggle_mesh.activated.connect(self.toggle_pointcloud_mesh_view)
+
+        self.shortcut_slice_up = QShortcut(QKeySequence(Qt.Key_Up), self)
+        self.shortcut_slice_up.setContext(Qt.WidgetWithChildrenShortcut)
+        self.shortcut_slice_up.activated.connect(lambda: self.slice_viewer.step_slice(+1))
+
+        self.shortcut_slice_down = QShortcut(QKeySequence(Qt.Key_Down), self)
+        self.shortcut_slice_down.setContext(Qt.WidgetWithChildrenShortcut)
+        self.shortcut_slice_down.activated.connect(lambda: self.slice_viewer.step_slice(-1))
         
         # Enable focus for keyboard events
         self.setFocusPolicy(Qt.StrongFocus)
@@ -116,6 +146,12 @@ class ScanViewerTab(QWidget):
         elif event.key() == Qt.Key_M and event.modifiers() == Qt.ControlModifier:
             self.toggle_pointcloud_mesh_view()
             event.accept()
+        elif event.key() == Qt.Key_Up and event.modifiers() == Qt.NoModifier:
+            self.slice_viewer.step_slice(+1)
+            event.accept()
+        elif event.key() == Qt.Key_Down and event.modifiers() == Qt.NoModifier:
+            self.slice_viewer.step_slice(-1)
+            event.accept()
         else:
             super().keyPressEvent(event)
 
@@ -126,6 +162,7 @@ class ScanViewerTab(QWidget):
         self.volume_source = volume_source
         self._volume_loaded = False
         self._last_volume_shape_xyz = None
+        self._volume_xyz = None
         has_source = volume_source is not None
         self.btn_toggle_volume.setEnabled(has_source)
         self.spin_volume_downsample.setEnabled(has_source)
@@ -139,6 +176,42 @@ class ScanViewerTab(QWidget):
             self.viewer.set_volume_mode(False)
             self.btn_toggle_volume.setText("Show 3D Volume")
             self.volume_status_label.setText("Volume: none")
+            self.slice_viewer.clear_volume()
+            self.viewer.clear_slice_indicator()
+            self.disable_slice_viewer()
+
+    def toggle_slice_viewer(self):
+        if self._slice_viewer_enabled:
+            self.disable_slice_viewer()
+            return
+        self.enable_slice_viewer()
+
+    def is_slice_viewer_enabled(self):
+        return self._slice_viewer_enabled
+
+    def enable_slice_viewer(self):
+        if self.volume_source is None:
+            self.slice_viewer.set_unavailable_message()
+            return
+
+        self._slice_viewer_enabled = True
+        self.slice_viewer.set_active(True)
+        self.viewer_tabs.setTabEnabled(1, True)
+        self.viewer.set_slice_indicator_visible(True)
+
+        if self._volume_loaded and self._volume_xyz is not None:
+            self.slice_viewer.set_volume(self._volume_xyz)
+            self._update_slice_indicator()
+        else:
+            self.slice_viewer.set_loading_message()
+            self.reload_volume(show_after_load=self._showing_volume_mode)
+
+    def disable_slice_viewer(self):
+        self._slice_viewer_enabled = False
+        self.slice_viewer.set_active(False)
+        self.viewer_tabs.setCurrentIndex(0)
+        self.viewer_tabs.setTabEnabled(1, False)
+        self.viewer.clear_slice_indicator()
 
     def toggle_volume_view(self):
         if self.volume_source is None:
@@ -197,9 +270,14 @@ class ScanViewerTab(QWidget):
 
     def _on_volume_loaded(self, volume, metadata, show_after_load):
         self.viewer.set_volume(volume)
+        self._volume_xyz = volume
         self._last_volume_shape_xyz = tuple(int(v) for v in volume.shape)
         self._sync_volume_view_from_geometry(volume_shape_xyz=volume.shape)
         self._volume_loaded = True
+
+        if self._slice_viewer_enabled:
+            self.slice_viewer.set_volume(volume)
+            self._update_slice_indicator()
 
         if show_after_load:
             self._showing_volume_mode = True
@@ -235,12 +313,16 @@ class ScanViewerTab(QWidget):
             bounds_min_xyz=bounds[0],
             bounds_max_xyz=bounds[1],
         )
+        self._update_slice_indicator()
 
     def _on_volume_error(self, message):
         self.btn_toggle_volume.setEnabled(self.volume_source is not None)
         self.btn_reload_volume.setEnabled(self.volume_source is not None)
         self.spin_volume_downsample.setEnabled(self.volume_source is not None)
         self.volume_status_label.setText(f"Volume error: {message}")
+        if self._slice_viewer_enabled:
+            self.slice_viewer.set_error_message(message)
+            self.viewer.clear_slice_indicator()
         self._volume_worker = None
 
     def set_point_clouds(self, clouds):
@@ -284,3 +366,20 @@ class ScanViewerTab(QWidget):
         """Clear all meshes from the viewer."""
         self.viewer.clear_meshes()
         self.viewer.update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.slice_viewer.refresh()
+
+    def _on_slice_changed(self, _slice_index, _slice_count):
+        self._update_slice_indicator()
+
+    def _update_slice_indicator(self):
+        if not self._slice_viewer_enabled:
+            return
+        if self._volume_xyz is None:
+            return
+        self.viewer.set_slice_indicator(
+            slice_index=self.slice_viewer.get_slice_index(),
+            slice_count=self.slice_viewer.get_slice_count(),
+        )

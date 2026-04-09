@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'UI_V1.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.7.1
+## Created by: Qt User Interface Compiler version 6.10.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -16,11 +16,12 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QIcon, QImage, QKeySequence, QLinearGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
-from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFrame, QGridLayout,
-    QHBoxLayout, QLabel, QMainWindow, QMenu,
-    QMenuBar, QProgressBar, QPushButton, QSizePolicy,
-    QSpacerItem, QSpinBox, QStackedWidget, QStatusBar,
-    QTabWidget, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFrame,
+    QGridLayout, QHBoxLayout, QLabel, QMainWindow,
+    QMenu, QMenuBar, QProgressBar, QPushButton,
+    QSizePolicy, QSpacerItem, QSpinBox, QStackedWidget,
+    QStatusBar, QTabWidget, QToolButton, QVBoxLayout,
+    QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -55,6 +56,10 @@ class Ui_MainWindow(object):
         self.actionTransformation_2.setObjectName(u"actionTransformation_2")
         self.actionRegistration_3 = QAction(MainWindow)
         self.actionRegistration_3.setObjectName(u"actionRegistration_3")
+        self.actionSlice_Viewer = QAction(MainWindow)
+        self.actionSlice_Viewer.setObjectName(u"actionSlice_Viewer")
+        self.actionControls_Shortcuts = QAction(MainWindow)
+        self.actionControls_Shortcuts.setObjectName(u"actionControls_Shortcuts")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.layout_main = QHBoxLayout(self.centralwidget)
@@ -412,9 +417,8 @@ class Ui_MainWindow(object):
         self.layout_transformation_tools.addWidget(self.label_transform_help)
 
         self.layout_affine_matrix = QGridLayout()
+        self.layout_affine_matrix.setSpacing(3)
         self.layout_affine_matrix.setObjectName(u"layout_affine_matrix")
-        self.layout_affine_matrix.setHorizontalSpacing(3)
-        self.layout_affine_matrix.setVerticalSpacing(3)
         self.matrix_00 = QDoubleSpinBox(self.page_transformation_tools)
         self.matrix_00.setObjectName(u"matrix_00")
 
@@ -548,7 +552,7 @@ class Ui_MainWindow(object):
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
-        self.menubar.setGeometry(QRect(0, 0, 1600, 33))
+        self.menubar.setGeometry(QRect(0, 0, 1600, 23))
         self.menuFiles = QMenu(self.menubar)
         self.menuFiles.setObjectName(u"menuFiles")
         self.menuImport_2 = QMenu(self.menuFiles)
@@ -574,6 +578,8 @@ class Ui_MainWindow(object):
         self.menuImport_2.addAction(self.actionImport_XRay)
         self.menuTools.addAction(self.actionTransformation_2)
         self.menuTools.addAction(self.actionRegistration_3)
+        self.menuHelp.addAction(self.actionControls_Shortcuts)
+        self.menuView.addAction(self.actionSlice_Viewer)
 
         self.retranslateUi(MainWindow)
 
@@ -600,6 +606,8 @@ class Ui_MainWindow(object):
         self.actionTransformation.setText(QCoreApplication.translate("MainWindow", u"Transformation", None))
         self.actionTransformation_2.setText(QCoreApplication.translate("MainWindow", u"Transformation", None))
         self.actionRegistration_3.setText(QCoreApplication.translate("MainWindow", u"Registration", None))
+        self.actionSlice_Viewer.setText(QCoreApplication.translate("MainWindow", u"Slice Viewer", None))
+        self.actionControls_Shortcuts.setText(QCoreApplication.translate("MainWindow", u"Controls/Shortcuts", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Scans Workspace", None))
         self.toolButton.setText(QCoreApplication.translate("MainWindow", u"Run Global + Local Registration", None))
         self.toolButton_3.setText(QCoreApplication.translate("MainWindow", u"Registration (Sample Point Cloud)", None))
@@ -616,9 +624,12 @@ class Ui_MainWindow(object):
         self.label_params_title.setText(QCoreApplication.translate("MainWindow", u"Registration Parameters", None))
         self.label_voxel_size.setText(QCoreApplication.translate("MainWindow", u"Voxel Size:", None))
         self.label_global_transform_model.setText(QCoreApplication.translate("MainWindow", u"Global Transform Model:", None))
-        self.combo_global_transform_model.setToolTip(QCoreApplication.translate("MainWindow", u"Rigid keeps scale fixed. Similarity lets the global stage estimate one uniform scale factor.", None))
         self.combo_global_transform_model.setItemText(0, QCoreApplication.translate("MainWindow", u"Rigid", None))
         self.combo_global_transform_model.setItemText(1, QCoreApplication.translate("MainWindow", u"Similarity (uniform scale)", None))
+
+#if QT_CONFIG(tooltip)
+        self.combo_global_transform_model.setToolTip(QCoreApplication.translate("MainWindow", u"Rigid keeps scale fixed. Similarity lets the global stage estimate one uniform scale factor.", None))
+#endif // QT_CONFIG(tooltip)
         self.label_ransac_title.setText(QCoreApplication.translate("MainWindow", u"Global Registration (RANSAC)", None))
         self.label_ransac_dist.setText(QCoreApplication.translate("MainWindow", u"Distance Multiplier:", None))
         self.label_ransac_max_iter.setText(QCoreApplication.translate("MainWindow", u"Max Iterations:", None))
