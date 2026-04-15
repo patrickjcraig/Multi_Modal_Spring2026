@@ -156,6 +156,9 @@ class ImportController:
         try:
             mw.statusbar.showMessage("Loading TIFF stack...")
 
+            if level is not None and float(level) <= 0.0:
+                level = None
+
             crop_zyx = (roi_xyz[2], roi_xyz[1], roi_xyz[0])
             stack_info = inspect_tiff_stack(folder_path)
 
@@ -220,6 +223,9 @@ class ImportController:
         mw = self.main
         try:
             mw.statusbar.showMessage("Loading SAM PNG stack...")
+
+            if level is not None and float(level) <= 0.0:
+                level = None
 
             crop_zyx = (roi_xyz[2], roi_xyz[1], roi_xyz[0])
             stack_info = inspect_png_stack(folder_path)
@@ -287,6 +293,10 @@ class ImportController:
             label = file_type.upper()
             mw.statusbar.showMessage(f"Loading {label} volume...")
 
+            level = params.level
+            if level is not None and float(level) <= 0.0:
+                level = None
+
             crop_zyx = (params.roi_xyz[2], params.roi_xyz[1], params.roi_xyz[0])
             volume_info = inspect_array_volume(
                 file_path=params.path,
@@ -299,7 +309,7 @@ class ImportController:
                 voxel_size_mm=params.voxel_size_mm,
                 downsample_zyx=params.downsampling,
                 crop_zyx=crop_zyx,
-                level=params.level,
+                level=level,
                 dataset_path=params.dataset_path,
             )
             volume_source = VolumeSource(

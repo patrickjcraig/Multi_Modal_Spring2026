@@ -37,6 +37,8 @@ class XRayFileImportDialog(QDialog, Ui_XRayFileImportDialog):
         validator = QDoubleValidator(0.0, 1.0, 18, self)
         validator.setNotation(QDoubleValidator.StandardNotation)
         self.line_voxel_size.setValidator(validator)
+        self.spin_marching_cubes.setMinimum(0)
+        self.spin_marching_cubes.setToolTip("Use 0 for Auto level detection.")
 
     def _setup_connections(self):
         self.button_box.accepted.connect(self.validate_and_accept)

@@ -9,6 +9,7 @@ import cv2
 import tifffile as tiff
 import dask.array as da
 from dask import delayed
+from skimage.filters import threshold_otsu
 from skimage.measure import marching_cubes
 
 from defaults import DEFAULT_VOXEL_SIZE_MM
@@ -309,7 +310,22 @@ def _resolve_surface_level(sub_zyx, level, default_mode="percentile"):
         if default_mode == "midpoint":
             candidate = vmin + 0.5 * (vmax - vmin)
         else:
-            candidate = float(np.percentile(sub_zyx, 99.5))
+            finite = sub_zyx[np.isfinite(sub_zyx)]
+            nonzero = finite[finite > 0]
+            source = nonzero if nonzero.size >= 2048 else finite
+
+            if source.size == 0:
+                candidate = vmin + 0.5 * (vmax - vmin)
+            else:
+                p05, p995 = np.percentile(source, (0.5, 99.5))
+                clipped = source[(source >= p05) & (source <= p995)]
+                if clipped.size < 512:
+                    clipped = source
+
+                try:
+                    candidate = float(threshold_otsu(clipped.astype(np.float32, copy=False)))
+                except Exception:
+                    candidate = float(np.percentile(source, 90.0))
     else:
         candidate = float(level)
 

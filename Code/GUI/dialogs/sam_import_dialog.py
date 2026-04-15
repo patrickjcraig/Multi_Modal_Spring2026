@@ -29,8 +29,11 @@ class SAMImportDialog(QDialog, Ui_SAMImportDialog):
         validator = QDoubleValidator(0.0, 1.0, 18, self)
         validator.setNotation(QDoubleValidator.StandardNotation)
         self.line_voxel_size.setValidator(validator)
-        self.spin_marching_cubes.setValue(128)
-        self.spin_marching_cubes.setToolTip("For 8-bit SAM PNG data, a typical surface level is in the 1-255 range.")
+        self.spin_pcd_pts.setValue(15000)
+        self.spin_pcd_pts.setToolTip("Higher point counts capture finer reconstructed structure.")
+        self.spin_marching_cubes.setMinimum(0)
+        self.spin_marching_cubes.setValue(0)
+        self.spin_marching_cubes.setToolTip("Use 0 for Auto level detection. For 8-bit SAM PNG data, 1-255 is also supported.")
 
     def _setup_connections(self):
         self.btn_browse.clicked.connect(self.browse_path)

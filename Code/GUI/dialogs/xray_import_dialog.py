@@ -38,7 +38,11 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
         self.spin_roi_z.setMinimum(1)
         self.spin_downsampling.setMinimum(1)
         self.spin_pcd_pts.setMinimum(1)
-        self.spin_marching_cubes.setMinimum(1)
+        self.spin_pcd_pts.setValue(30000)
+        self.spin_pcd_pts.setToolTip("Higher point counts capture small internal features better.")
+        self.spin_marching_cubes.setMinimum(0)
+        self.spin_marching_cubes.setValue(0)
+        self.spin_marching_cubes.setToolTip("Use 0 for Auto level detection. Higher values isolate only brighter materials.")
         self._configure_arrow_spinbox(self.spin_downsampling)
 
     @staticmethod
