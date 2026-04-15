@@ -27,6 +27,7 @@ def run_ransac_registration(
     distance_threshold=0.05,
     max_iteration=100000,
     confidence=0.999,
+    mutual_filter=False,
 ):
     source_down, source_fpfh = preprocess_point_cloud(source, voxel_size)
     target_down, target_fpfh = preprocess_point_cloud(target, voxel_size)
@@ -36,7 +37,7 @@ def run_ransac_registration(
         target_down,
         source_fpfh,
         target_fpfh,
-        mutual_filter=True,
+        mutual_filter=bool(mutual_filter),
         max_correspondence_distance=distance_threshold,
         estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
         ransac_n=4,

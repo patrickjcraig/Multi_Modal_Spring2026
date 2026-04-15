@@ -252,15 +252,17 @@ def run_ICP(
     voxel_size,
     icp_dist_multiplier=0.4,
     max_iterations=50,
+    global_transform_model=GLOBAL_TRANSFORM_RIGID,
 ):
     distance_threshold = voxel_size * icp_dist_multiplier
     criteria = o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=max_iterations)
+    with_scaling = uses_uniform_scaling(global_transform_model)
     result = o3d.pipelines.registration.registration_icp(
         pcd1,
         pcd2,
         distance_threshold,
         initial_transform,
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+        o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling),
         criteria=criteria,
     )
     return result
@@ -367,7 +369,11 @@ def run_full_registration(
         registration_voxel_size,
         adaptive_icp_multiplier,
         adaptive_icp_iters,
+        global_transform_model=global_transform_model,
     )
+    if uses_uniform_scaling(global_transform_model):
+        icp_scale = float(np.mean(np.linalg.norm(np.asarray(result_icp.transformation)[:3, :3], axis=0)))
+        print(f"Local ICP similarity scale: {icp_scale:.6f}")
     if step_callback is not None:
         step_callback(
             2,

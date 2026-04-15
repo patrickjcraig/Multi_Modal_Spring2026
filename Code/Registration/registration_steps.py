@@ -62,6 +62,7 @@ def iterative_icp(
     max_iterations=50,
     step=1,
     callback=None,
+    global_transform_model="rigid",
 ):
     """Run ICP once and optionally emit a single callback.
 
@@ -80,6 +81,7 @@ def iterative_icp(
         voxel_size,
         icp_dist_multiplier,
         max_iterations=max_iterations,
+        global_transform_model=global_transform_model,
     )
     if callback is not None:
         callback(max_iterations, result)
