@@ -5,6 +5,7 @@ from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import QDialog, QMessageBox
 
 from makeGeometry import inspect_array_volume, list_h5_volume_datasets
+from Utils.voxel_size_probe import probe_voxel_size
 
 from .ui_xray_file_import_dialog import Ui_XRayFileImportDialog
 from .xray_import_types import XRayImportParams
@@ -19,6 +20,7 @@ class XRayFileImportDialog(QDialog, Ui_XRayFileImportDialog):
         self.file_path = file_path
         self.defaults = defaults
         self._selected_dataset_path = defaults.dataset_path
+        self._voxel_user_modified = False
 
         self.setWindowTitle(f"X-Ray {self.import_type.upper()} Import")
         self.setModal(True)
@@ -44,6 +46,10 @@ class XRayFileImportDialog(QDialog, Ui_XRayFileImportDialog):
         self.button_box.accepted.connect(self.validate_and_accept)
         self.button_box.rejected.connect(self.reject)
         self.combo_dataset.currentIndexChanged.connect(self._refresh_detected_info)
+        self.line_voxel_size.textEdited.connect(self._mark_voxel_user_modified)
+
+    def _mark_voxel_user_modified(self, _text):
+        self._voxel_user_modified = True
 
     def _populate_defaults(self):
         self.line_path.setText(self.file_path)
@@ -85,6 +91,7 @@ class XRayFileImportDialog(QDialog, Ui_XRayFileImportDialog):
             self.label_volume_info.setText(
                 f"shape ZYX {info['shape_zyx']} | dtype {info['dtype']}"
             )
+            self._apply_auto_voxel(entry=None)
 
     def _refresh_detected_info(self):
         if self.import_type != "h5" or self.combo_dataset.count() == 0:
@@ -99,6 +106,29 @@ class XRayFileImportDialog(QDialog, Ui_XRayFileImportDialog):
         if spacing:
             text += f" | spacing_zyx_mm {spacing}"
         self.label_volume_info.setText(text)
+        self._apply_auto_voxel(entry=entry)
+
+    def _apply_auto_voxel(self, entry):
+        spacing = None
+        if entry is not None:
+            spacing = entry.get("spacing_zyx_mm")
+
+        result = probe_voxel_size(
+            import_type=self.import_type,
+            path=self.file_path,
+            spacing_zyx_mm=spacing,
+        )
+        if result.voxel_size_mm is None:
+            return
+
+        if self._voxel_user_modified and self.line_voxel_size.text().strip():
+            return
+
+        self.line_voxel_size.setText(f"{result.voxel_size_mm:.12g}")
+        tooltip = f"Auto-detected from {result.source}."
+        if result.note:
+            tooltip = f"{tooltip} {result.note}"
+        self.line_voxel_size.setToolTip(tooltip)
 
     def validate_and_accept(self):
         if not os.path.isfile(self.file_path):

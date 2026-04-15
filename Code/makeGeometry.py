@@ -310,22 +310,49 @@ def _resolve_surface_level(sub_zyx, level, default_mode="percentile"):
         if default_mode == "midpoint":
             candidate = vmin + 0.5 * (vmax - vmin)
         else:
-            finite = sub_zyx[np.isfinite(sub_zyx)]
-            nonzero = finite[finite > 0]
-            source = nonzero if nonzero.size >= 2048 else finite
+            # Auto mode must stay memory-safe for dense stacks: avoid building
+            # multiple full-size boolean/indexed arrays from the full volume.
+            flat = np.asarray(sub_zyx).reshape(-1)
+            max_auto_samples = 1_000_000
+            if flat.size > max_auto_samples:
+                step = int(np.ceil(flat.size / float(max_auto_samples)))
+                sample = flat[::max(step, 1)]
+            else:
+                sample = flat
 
-            if source.size == 0:
+            if np.issubdtype(sample.dtype, np.floating):
+                sample = sample[np.isfinite(sample)]
+
+            if sample.size == 0:
                 candidate = vmin + 0.5 * (vmax - vmin)
             else:
-                p05, p995 = np.percentile(source, (0.5, 99.5))
-                clipped = source[(source >= p05) & (source <= p995)]
-                if clipped.size < 512:
-                    clipped = source
+                nonzero = sample[sample > 0]
+                source = nonzero if nonzero.size >= 2048 else sample
 
-                try:
-                    candidate = float(threshold_otsu(clipped.astype(np.float32, copy=False)))
-                except Exception:
-                    candidate = float(np.percentile(source, 90.0))
+                if source.size == 0:
+                    candidate = vmin + 0.5 * (vmax - vmin)
+                else:
+                    p05, p995 = np.percentile(source, (0.5, 99.5))
+                    clipped = source[(source >= p05) & (source <= p995)]
+                    if clipped.size < 512:
+                        clipped = source
+
+                    q90 = float(np.percentile(source, 90.0))
+                    q97 = float(np.percentile(source, 97.0))
+
+                    try:
+                        candidate = float(threshold_otsu(clipped.astype(np.float32, copy=False)))
+                    except Exception:
+                        candidate = q90
+
+                    # Dense datasets can yield very low Otsu thresholds that
+                    # explode mesh complexity; raise level when occupancy is high.
+                    occ = float(np.mean(source >= candidate))
+                    if occ > 0.35:
+                        candidate = max(candidate, q90)
+                        occ = float(np.mean(source >= candidate))
+                    if occ > 0.20:
+                        candidate = max(candidate, q97)
     else:
         candidate = float(level)
 
@@ -338,6 +365,36 @@ def _resolve_surface_level(sub_zyx, level, default_mode="percentile"):
         candidate = fallback
 
     return candidate
+
+
+def _guard_mesh_sampling(shape_zyx, downsample_zyx, crop_zyx, max_mesh_voxels):
+    """Bound marching-cubes memory by adapting effective downsample/crop.
+
+    Keeps roughly the same physical ROI by shrinking crop dimensions whenever
+    effective downsample must be increased.
+    """
+    effective_downsample = max(1, int(downsample_zyx))
+    max_mesh_voxels = max(1, int(max_mesh_voxels))
+    guarded_crop = None if crop_zyx is None else tuple(max(1, int(v)) for v in crop_zyx)
+
+    while True:
+        shape_ds = _downsampled_shape(shape_zyx, effective_downsample)
+        if guarded_crop is None:
+            z0, y0, x0 = 0, 0, 0
+            z1, y1, x1 = shape_ds
+        else:
+            z0, z1, y0, y1, x0, x1 = _center_crop_bounds(shape_ds, guarded_crop)
+
+        voxels = int(max(0, z1 - z0) * max(0, y1 - y0) * max(0, x1 - x0))
+        if voxels <= max_mesh_voxels:
+            return effective_downsample, guarded_crop
+
+        guard_factor = int(np.ceil((voxels / float(max_mesh_voxels)) ** (1.0 / 3.0)))
+        guard_factor = max(2, guard_factor)
+        effective_downsample *= guard_factor
+
+        if guarded_crop is not None:
+            guarded_crop = tuple(max(1, int(np.ceil(v / guard_factor))) for v in guarded_crop)
 
 
 def _mesh_from_subvolume_zyx(sub_zyx, voxel_size_mm, downsample_zyx, bounds_zyx, level):
@@ -481,6 +538,7 @@ def get_mesh_from_ct_stack(
     downsample_zyx: int = 2,                      
     crop_zyx: tuple[int, int, int] = (256, 256, 256),
     level: float | None = None,
+    max_mesh_voxels: int = 20_000_000,
 ):
     """
     Returns an Open3D TriangleMesh extracted from a CT TIFF stack using marching cubes.
@@ -493,15 +551,27 @@ def get_mesh_from_ct_stack(
     """
 
     vol = _make_lazy_volume_zyx(folder_path, "tiff_stack")               # dask (Z,Y,X)
-    vol_ds = vol[::downsample_zyx, ::downsample_zyx, ::downsample_zyx]
+    effective_downsample, guarded_crop = _guard_mesh_sampling(
+        shape_zyx=vol.shape,
+        downsample_zyx=downsample_zyx,
+        crop_zyx=crop_zyx,
+        max_mesh_voxels=max_mesh_voxels,
+    )
+    if effective_downsample != int(downsample_zyx):
+        print(
+            f"Mesh guard: requested downsample {downsample_zyx}, "
+            f"using {effective_downsample} to stay within {int(max_mesh_voxels):,} voxels"
+        )
 
-    z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, crop_zyx)
+    vol_ds = vol[::effective_downsample, ::effective_downsample, ::effective_downsample]
+
+    z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, guarded_crop)
     sub = vol_ds[z0:z1, y0:y1, x0:x1].compute()            # numpy array (small)
 
     return _mesh_from_subvolume_zyx(
         sub_zyx=sub,
         voxel_size_mm=voxel_size_mm,
-        downsample_zyx=downsample_zyx,
+        downsample_zyx=effective_downsample,
         bounds_zyx=(z0, z1, y0, y1, x0, x1),
         level=level,
     )
@@ -513,18 +583,31 @@ def get_mesh_from_png_stack(
     downsample_zyx: int = 2,
     crop_zyx: tuple[int, int, int] = (256, 256, 256),
     level: float | None = None,
+    max_mesh_voxels: int = 20_000_000,
 ):
     vol = _make_lazy_volume_zyx(folder_path, "png_stack")
-    vol_ds = vol[::downsample_zyx, ::downsample_zyx, ::downsample_zyx]
+    effective_downsample, guarded_crop = _guard_mesh_sampling(
+        shape_zyx=vol.shape,
+        downsample_zyx=downsample_zyx,
+        crop_zyx=crop_zyx,
+        max_mesh_voxels=max_mesh_voxels,
+    )
+    if effective_downsample != int(downsample_zyx):
+        print(
+            f"Mesh guard: requested downsample {downsample_zyx}, "
+            f"using {effective_downsample} to stay within {int(max_mesh_voxels):,} voxels"
+        )
 
-    z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, crop_zyx)
+    vol_ds = vol[::effective_downsample, ::effective_downsample, ::effective_downsample]
+
+    z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, guarded_crop)
     sub = vol_ds[z0:z1, y0:y1, x0:x1].compute()
     level = _resolve_surface_level(sub, level, default_mode="midpoint")
 
     return _mesh_from_subvolume_zyx(
         sub_zyx=sub,
         voxel_size_mm=voxel_size_mm,
-        downsample_zyx=downsample_zyx,
+        downsample_zyx=effective_downsample,
         bounds_zyx=(z0, z1, y0, y1, x0, x1),
         level=level,
     )
@@ -538,6 +621,7 @@ def get_mesh_from_array_volume(
     crop_zyx: tuple[int, int, int] = (256, 256, 256),
     level: float | None = None,
     dataset_path: str | None = None,
+    max_mesh_voxels: int = 20_000_000,
 ):
     file_type = file_type.strip().lower()
 
@@ -550,11 +634,23 @@ def get_mesh_from_array_volume(
         raise ValueError(f"Unsupported file type '{file_type}'")
 
     try:
-        sub_zyx, bounds_zyx = _extract_subvolume_from_array(array_zyx, downsample_zyx, crop_zyx)
+        effective_downsample, guarded_crop = _guard_mesh_sampling(
+            shape_zyx=array_zyx.shape,
+            downsample_zyx=downsample_zyx,
+            crop_zyx=crop_zyx,
+            max_mesh_voxels=max_mesh_voxels,
+        )
+        if effective_downsample != int(downsample_zyx):
+            print(
+                f"Mesh guard: requested downsample {downsample_zyx}, "
+                f"using {effective_downsample} to stay within {int(max_mesh_voxels):,} voxels"
+            )
+
+        sub_zyx, bounds_zyx = _extract_subvolume_from_array(array_zyx, effective_downsample, guarded_crop)
         return _mesh_from_subvolume_zyx(
             sub_zyx=sub_zyx,
             voxel_size_mm=voxel_size_mm,
-            downsample_zyx=downsample_zyx,
+            downsample_zyx=effective_downsample,
             bounds_zyx=bounds_zyx,
             level=level,
         )

@@ -37,6 +37,8 @@ class RegistrationController(QObject):
         self.local_stage_name = "Local ICP"
         self._display_source_mesh_base = None
         self._display_target_mesh_base = None
+        self.pre_scale_context = None
+        self.registration_voxel_size_used = None
 
     # ------------------------------------------------------------------
     # Public methods hooked to UI signals
@@ -112,6 +114,7 @@ class RegistrationController(QObject):
                 "Target": self.target_scan.name,
                 "Global stage": self._describe_global_stage(),
                 "Local stage": self.local_stage_name,
+                "Pre-scale": "pending",
                 "3D volume": "reference scan volume attached",
             },
         )
@@ -280,6 +283,8 @@ class RegistrationController(QObject):
         if results.get('icp') is not None:
             self.icp_result = results['icp']
         self.global_transform_model = results.get("global_transform_model", self.global_transform_model)
+        self.pre_scale_context = results.get("pre_scale")
+        self.registration_voxel_size_used = results.get("registration_voxel_size")
 
         self._update_results_display()
 
@@ -294,10 +299,19 @@ class RegistrationController(QObject):
 
         mw.progressBar.setValue(100)
         if getattr(self, 'icp_result', None) is not None:
+            voxel_note = ""
+            if self.registration_voxel_size_used is not None:
+                try:
+                    requested = float(self.main.spinBox_voxel_size.value())
+                    used = float(self.registration_voxel_size_used)
+                    if used > requested:
+                        voxel_note = f" | guard voxel: {used:.6g}"
+                except Exception:
+                    voxel_note = ""
             mw.statusbar.showMessage(
-                '{} complete! Fitness: {:.6f}, RMSE: {:.6f}'.format(
+                '{} complete! Fitness: {:.6f}, RMSE: {:.6f}{}'.format(
                     self.local_stage_name,
-                    self.icp_result.fitness, self.icp_result.inlier_rmse))
+                    self.icp_result.fitness, self.icp_result.inlier_rmse, voxel_note))
         else:
             mw.statusbar.showMessage('Registration complete!')
 
@@ -346,6 +360,7 @@ class RegistrationController(QObject):
         if stage == 0:
             self.pcd1 = data.get("pcd1")
             self.pcd2 = data.get("pcd2")
+            self.pre_scale_context = data.get("pre_scale")
         elif stage == 1:
             self.ransac_result = data.get("ransac")
         elif stage == 2:
@@ -358,7 +373,23 @@ class RegistrationController(QObject):
         total = data.get('total', 1)
         if stage == 0:
             mw.progressBar.setValue(0)
-            mw.statusbar.showMessage("Loaded point clouds")
+            scale_text = ""
+            if self.pre_scale_context and self.pre_scale_context.get("enabled"):
+                scale_text = (
+                    f" | pre-scale x{float(self.pre_scale_context.get('scale', 1.0)):.4f}"
+                    f" ({self.pre_scale_context.get('method', 'unknown')})"
+                )
+            guard_text = ""
+            guard_voxel = data.get("registration_voxel_size")
+            if guard_voxel is not None:
+                try:
+                    requested = float(mw.spinBox_voxel_size.value())
+                    used = float(guard_voxel)
+                    if used > requested:
+                        guard_text = f" | guard voxel {used:.6g}"
+                except Exception:
+                    guard_text = ""
+            mw.statusbar.showMessage(f"Loaded point clouds{scale_text}{guard_text}")
             overlay = ""
         elif stage == 1:
             mw.progressBar.setValue(60)
@@ -421,6 +452,11 @@ class RegistrationController(QObject):
             f"Local: {self.local_stage_name}",
             f"Stage: {mw.label_step_info.text()}",
         ])
+        if self.pre_scale_context and self.pre_scale_context.get("enabled"):
+            info_text += (
+                f" | Pre-scale: x{float(self.pre_scale_context.get('scale', 1.0)):.6f}"
+                f" ({self.pre_scale_context.get('method', 'unknown')})"
+            )
         if stage == 1 and payload.get("ransac") is not None and self.global_transform_model == "similarity":
             info_text += f" | Global scale: {self._extract_uniform_scale(payload['ransac'].transformation):.6f}"
         elif stage == 2 and payload.get("icp") is not None and self.global_transform_model == "similarity":

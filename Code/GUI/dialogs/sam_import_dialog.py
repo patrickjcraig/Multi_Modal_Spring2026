@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox
 
 from defaults import DEFAULT_VOXEL_SIZE_MM
 from makeGeometry import inspect_png_stack
+from Utils.voxel_size_probe import probe_voxel_size
 
 from .ui_sam_import_dialog import Ui_SAMImportDialog
 from .xray_import_types import SAMImportParams
@@ -15,6 +16,7 @@ class SAMImportDialog(QDialog, Ui_SAMImportDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
+        self._voxel_user_modified = False
         self._setup_ui()
         self._setup_connections()
 
@@ -38,12 +40,17 @@ class SAMImportDialog(QDialog, Ui_SAMImportDialog):
     def _setup_connections(self):
         self.btn_browse.clicked.connect(self.browse_path)
         self.line_path.textChanged.connect(self._refresh_detected_info)
+        self.line_voxel_size.textEdited.connect(self._mark_voxel_user_modified)
         self.button_box.accepted.connect(self.validate_and_accept)
         self.button_box.rejected.connect(self.reject)
+
+    def _mark_voxel_user_modified(self, _text):
+        self._voxel_user_modified = True
 
     def browse_path(self):
         folder = QFileDialog.getExistingDirectory(self, "Select SAM PNG Stack Folder")
         if folder:
+            self._voxel_user_modified = False
             self.line_path.setText(folder)
 
     def _refresh_detected_info(self):
@@ -60,9 +67,16 @@ class SAMImportDialog(QDialog, Ui_SAMImportDialog):
 
         shape_zyx = tuple(int(v) for v in info["shape_zyx"])
         shape_xyz = (shape_zyx[2], shape_zyx[1], shape_zyx[0])
-        self.label_detected.setText(
-            f"shape XYZ {shape_xyz} | dtype {info['dtype']} | slices {info['slice_count']}"
-        )
+        detected_text = f"shape XYZ {shape_xyz} | dtype {info['dtype']} | slices {info['slice_count']}"
+
+        result = probe_voxel_size(import_type="png stack folder", path=folder_path)
+        if result.voxel_size_mm is not None:
+            if not (self._voxel_user_modified and self.line_voxel_size.text().strip()):
+                self.line_voxel_size.setText(f"{result.voxel_size_mm:.12g}")
+            source_text = result.source or "metadata"
+            detected_text += f" | voxel_mm {result.voxel_size_mm:.12g} ({source_text})"
+
+        self.label_detected.setText(detected_text)
 
     def validate_and_accept(self):
         folder_path = self.line_path.text().strip()

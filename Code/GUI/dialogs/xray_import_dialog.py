@@ -5,6 +5,7 @@ from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox
 
 from defaults import DEFAULT_VOXEL_SIZE_MM
+from Utils.voxel_size_probe import probe_voxel_size
 from .xray_file_import_dialog import XRayFileImportDialog
 from .xray_import_types import XRayImportParams
 from .ui_xray_dialog import Ui_XRayDialog
@@ -15,6 +16,7 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
         super().__init__(parent)
         self.setupUi(self)
         self._file_import_params = None
+        self._voxel_user_modified = False
 
         self._setup_ui()
         self._setup_connections()
@@ -65,9 +67,33 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
     def _setup_connections(self):
         self.btn_browse.clicked.connect(self.browse_path)
         self.combo_import_type.currentTextChanged.connect(self._update_mode_state)
+        self.line_path.textChanged.connect(self._refresh_auto_voxel_size)
+        self.line_voxel_size.textEdited.connect(self._mark_voxel_user_modified)
         self.buttonBox.accepted.connect(self.validate_and_accept)
         self.buttonBox.rejected.connect(self.reject)
         self._update_mode_state()
+
+    def _mark_voxel_user_modified(self, _text):
+        self._voxel_user_modified = True
+
+    def _refresh_auto_voxel_size(self):
+        import_type = self.combo_import_type.currentText().strip().lower()
+        path = self.line_path.text().strip()
+        if not path:
+            return
+
+        result = probe_voxel_size(import_type=import_type, path=path)
+        if result.voxel_size_mm is None:
+            return
+
+        if self._voxel_user_modified and self.line_voxel_size.text().strip():
+            return
+
+        self.line_voxel_size.setText(f"{result.voxel_size_mm:.12g}")
+        tooltip = f"Auto-detected from {result.source}."
+        if result.note:
+            tooltip = f"{tooltip} {result.note}"
+        self.line_voxel_size.setToolTip(tooltip)
 
     def _numeric_defaults(self):
         return XRayImportParams(
@@ -117,7 +143,9 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
                 "Select TIFF Stack Folder"
             )
             if folder:
+                self._voxel_user_modified = False
                 self.line_path.setText(folder)
+                self._refresh_auto_voxel_size()
 
         elif import_type == "h5":
             file_path, _ = QFileDialog.getOpenFileName(
@@ -127,7 +155,9 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
                 "H5 Files (*.h5 *.hdf5)"
             )
             if file_path:
+                self._voxel_user_modified = False
                 self.line_path.setText(file_path)
+                self._refresh_auto_voxel_size()
 
         elif import_type == "npy":
             file_path, _ = QFileDialog.getOpenFileName(
@@ -137,7 +167,9 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
                 "NumPy Files (*.npy)"
             )
             if file_path:
+                self._voxel_user_modified = False
                 self.line_path.setText(file_path)
+                self._refresh_auto_voxel_size()
 
     def validate_and_accept(self):
         import_type = self.combo_import_type.currentText().strip().lower()

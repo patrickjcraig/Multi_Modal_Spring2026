@@ -4,15 +4,45 @@ import copy
 import open3d as o3d
 import numpy as np
 from makeGeometry import get_pcd_from_stl
+from Registration.scale_estimation import estimate_global_scale
 
 
 GLOBAL_TRANSFORM_RIGID = "rigid"
 GLOBAL_TRANSFORM_SIMILARITY = "similarity"
 MAX_REGISTRATION_POINTS = 120_000
+MAX_FEATURE_POINTS = 60_000
 
 
 def uses_uniform_scaling(global_transform_model):
     return global_transform_model == GLOBAL_TRANSFORM_SIMILARITY
+
+
+def _apply_uniform_prescale_if_enabled(source_pcd, target_pcd, global_transform_model):
+    if not uses_uniform_scaling(global_transform_model):
+        return {
+            "enabled": False,
+            "applied": False,
+            "scale": 1.0,
+            "method": "disabled",
+            "confidence": 0.0,
+            "detail": "Global transform model is rigid.",
+        }
+
+    estimate = estimate_global_scale(source_pcd, target_pcd)
+    scale = float(estimate.scale)
+    if not np.isfinite(scale) or scale <= 0:
+        scale = 1.0
+
+    center = source_pcd.get_center()
+    source_pcd.scale(scale, center)
+    return {
+        "enabled": True,
+        "applied": True,
+        "scale": scale,
+        "method": estimate.method,
+        "confidence": float(estimate.confidence),
+        "detail": estimate.detail,
+    }
 
 # Draws the point clouds after registration for the ICP and RANSAC steps
 def draw_registration_result(source, target, transformation):
@@ -35,15 +65,15 @@ def draw_registration_result(source, target, transformation):
 
 # Preprocesses the point cloud by downsampling, estimating normals, and computing FPFH features
 def preprocess_point_cloud(pcd, voxel_size):
-    pcd_down = pcd.voxel_down_sample(voxel_size)
+    pcd_down, effective_voxel = _adaptive_downsample_for_features(pcd, voxel_size)
     pcd_down.estimate_normals(
-        o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size * 2.0, max_nn=30)
+        o3d.geometry.KDTreeSearchParamHybrid(radius=effective_voxel * 2.0, max_nn=30)
     )
     fpfh = o3d.pipelines.registration.compute_fpfh_feature(
         pcd_down,
-        o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size * 5.0, max_nn=100),
+        o3d.geometry.KDTreeSearchParamHybrid(radius=effective_voxel * 5.0, max_nn=100),
     )
-    return pcd_down, fpfh
+    return pcd_down, fpfh, effective_voxel
 
 
 def _cap_point_count_for_registration(pcd, max_points=MAX_REGISTRATION_POINTS):
@@ -55,6 +85,33 @@ def _cap_point_count_for_registration(pcd, max_points=MAX_REGISTRATION_POINTS):
     keep_ratio = max(0.0001, min(1.0, keep_ratio))
     return pcd.random_down_sample(keep_ratio)
 
+
+def _adaptive_downsample_for_features(pcd, voxel_size, max_points=MAX_FEATURE_POINTS):
+    """Increase voxel size only when needed to keep feature clouds bounded."""
+    effective_voxel = max(float(voxel_size), 1e-9)
+    max_points = max(1000, int(max_points))
+
+    pcd_down = pcd.voxel_down_sample(effective_voxel)
+    if len(np.asarray(pcd_down.points)) <= max_points:
+        return pcd_down, effective_voxel
+
+    for _ in range(6):
+        count = max(1, len(np.asarray(pcd_down.points)))
+        if count <= max_points:
+            break
+        scale = (float(count) / float(max_points)) ** (1.0 / 3.0)
+        scale = max(1.15, min(2.0, scale))
+        effective_voxel *= scale
+        pcd_down = pcd.voxel_down_sample(effective_voxel)
+
+    count = len(np.asarray(pcd_down.points))
+    if count > max_points:
+        keep_ratio = float(max_points) / float(max(count, 1))
+        keep_ratio = max(0.0001, min(1.0, keep_ratio))
+        pcd_down = pcd_down.random_down_sample(keep_ratio)
+
+    return pcd_down, effective_voxel
+
 # Imports the point clouds, applies transformations to one of them, and runs preprocessing
 def import_dataset(voxel_size):
     pcd1 = get_pcd_from_stl()
@@ -63,10 +120,10 @@ def import_dataset(voxel_size):
     pcd2.translate([100, 100, 100])
     pcd2.rotate(o3d.geometry.get_rotation_matrix_from_xyz((0.2, 0.2, 0.2)))
 
-    pcd1_down, pcd1_fpfh = preprocess_point_cloud(pcd1, voxel_size)
-    pcd2_down, pcd2_fpfh = preprocess_point_cloud(pcd2, voxel_size)
+    pcd1_down, pcd1_fpfh, voxel1 = preprocess_point_cloud(pcd1, voxel_size)
+    pcd2_down, pcd2_fpfh, voxel2 = preprocess_point_cloud(pcd2, voxel_size)
 
-    return pcd1, pcd2, pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh
+    return pcd1, pcd2, pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh, max(float(voxel1), float(voxel2))
 
 # RANSAC 
 def run_RANSAC(
@@ -80,24 +137,112 @@ def run_RANSAC(
     validation_iterations=1000,
     global_transform_model=GLOBAL_TRANSFORM_RIGID,
 ):
-    distance_threshold = voxel_size * ransac_dist_multiplier
+    def _diag_extent(pcd):
+        pts = np.asarray(pcd.points)
+        if pts.size == 0:
+            return 0.0
+        mins = np.min(pts, axis=0)
+        maxs = np.max(pts, axis=0)
+        return float(np.linalg.norm(maxs - mins))
+
+    def _result_score(reg):
+        corr = len(reg.correspondence_set) if hasattr(reg, "correspondence_set") else 0
+        rmse = float(reg.inlier_rmse) if np.isfinite(reg.inlier_rmse) else 1e9
+        return (float(reg.fitness), corr, -rmse)
+
+    distance_threshold = float(voxel_size) * float(ransac_dist_multiplier)
     with_scaling = uses_uniform_scaling(global_transform_model)
-    result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
-        pcd1_down,
-        pcd2_down,
-        pcd1_fpfh,
-        pcd2_fpfh,
-        True,
-        distance_threshold,
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling),
-        4,
-        [
-            o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
-            o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(distance_threshold),
-        ],
-        o3d.pipelines.registration.RANSACConvergenceCriteria(max_iterations, validation_iterations),
+
+    n1 = len(np.asarray(pcd1_down.points))
+    n2 = len(np.asarray(pcd2_down.points))
+    point_ratio = float(max(n1, n2)) / float(max(1, min(n1, n2)))
+    d1 = _diag_extent(pcd1_down)
+    d2 = _diag_extent(pcd2_down)
+    extent_ratio = float(max(d1, d2)) / float(max(1e-9, min(d1, d2)))
+    partial_overlap_hint = (point_ratio >= 1.35) or (extent_ratio >= 1.35)
+
+    # Multiple hypotheses improve robustness when one cloud is contained in the other.
+    strategies = [
+        {
+            "name": "default_relaxed",
+            "mutual_filter": False,
+            "edge_ratio": 0.9,
+            "distance_scale": 1.0,
+        },
+        {
+            "name": "partial_overlap",
+            "mutual_filter": False,
+            "edge_ratio": 0.75,
+            "distance_scale": 1.35,
+        },
+    ]
+    if partial_overlap_hint:
+        strategies.append(
+            {
+                "name": "partial_overlap_wide",
+                "mutual_filter": False,
+                "edge_ratio": 0.6,
+                "distance_scale": 1.7,
+            }
+        )
+
+    per_attempt_iter = max(20000, int(max_iterations) // max(1, len(strategies)))
+    per_attempt_validation = max(500, int(validation_iterations))
+
+    best_result = None
+    best_name = ""
+    for strategy in strategies:
+        local_distance = float(distance_threshold) * float(strategy["distance_scale"])
+        checkers = [
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(float(strategy["edge_ratio"])),
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(local_distance),
+        ]
+        result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
+            pcd1_down,
+            pcd2_down,
+            pcd1_fpfh,
+            pcd2_fpfh,
+            bool(strategy["mutual_filter"]),
+            local_distance,
+            o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling),
+            4,
+            checkers,
+            o3d.pipelines.registration.RANSACConvergenceCriteria(per_attempt_iter, per_attempt_validation),
+        )
+        if best_result is None or _result_score(result) > _result_score(best_result):
+            best_result = result
+            best_name = str(strategy["name"])
+
+    # FGR fallback can recover from very sparse correspondence sets.
+    use_fgr_fallback = best_result is None or float(best_result.fitness) < 0.015
+    if use_fgr_fallback:
+        fgr_option = o3d.pipelines.registration.FastGlobalRegistrationOption(
+            maximum_correspondence_distance=float(distance_threshold) * (1.8 if partial_overlap_hint else 1.3),
+            iteration_number=128,
+        )
+        fgr_result = o3d.pipelines.registration.registration_fgr_based_on_feature_matching(
+            pcd1_down,
+            pcd2_down,
+            pcd1_fpfh,
+            pcd2_fpfh,
+            fgr_option,
+        )
+        if best_result is None or _result_score(fgr_result) > _result_score(best_result):
+            best_result = fgr_result
+            best_name = "fgr_fallback"
+
+    if best_result is None:
+        raise RuntimeError("Global registration failed to produce a result.")
+
+    print(
+        "Global registration selected:",
+        best_name,
+        f"fitness={float(best_result.fitness):.6f}",
+        f"rmse={float(best_result.inlier_rmse):.6f}",
+        f"corr={len(best_result.correspondence_set)}",
+        f"partial_overlap_hint={partial_overlap_hint}",
     )
-    return result
+    return best_result
 
 
 def run_ICP(
@@ -140,19 +285,49 @@ def run_full_registration(
     0 = raw clouds, 1 = post-RANSAC, 2 = post-ICP.
     """
 
+    pre_scale = {
+        "enabled": False,
+        "applied": False,
+        "scale": 1.0,
+        "method": "disabled",
+        "confidence": 0.0,
+        "detail": "",
+    }
+
     if source_pcd is not None and target_pcd is not None:
         pcd1 = copy.deepcopy(source_pcd)
         pcd2 = copy.deepcopy(target_pcd)
         pcd1 = _cap_point_count_for_registration(pcd1)
         pcd2 = _cap_point_count_for_registration(pcd2)
-        pcd1_down, pcd1_fpfh = preprocess_point_cloud(pcd1, voxel_size)
-        pcd2_down, pcd2_fpfh = preprocess_point_cloud(pcd2, voxel_size)
+        pre_scale = _apply_uniform_prescale_if_enabled(pcd1, pcd2, global_transform_model)
+        pcd1_down, pcd1_fpfh, voxel1 = preprocess_point_cloud(pcd1, voxel_size)
+        pcd2_down, pcd2_fpfh, voxel2 = preprocess_point_cloud(pcd2, voxel_size)
+        registration_voxel_size = max(float(voxel_size), float(voxel1), float(voxel2))
     else:
-        pcd1, pcd2, pcd1_down, pcd2_down, pcd1_fpfh, pcd2_fpfh = import_dataset(voxel_size)
+        pcd1, pcd2, _pcd1_down, _pcd2_down, _pcd1_fpfh, _pcd2_fpfh, _effective_voxel = import_dataset(voxel_size)
+        pre_scale = _apply_uniform_prescale_if_enabled(pcd1, pcd2, global_transform_model)
+        pcd1_down, pcd1_fpfh, voxel1 = preprocess_point_cloud(pcd1, voxel_size)
+        pcd2_down, pcd2_fpfh, voxel2 = preprocess_point_cloud(pcd2, voxel_size)
+        registration_voxel_size = max(float(voxel_size), float(voxel1), float(voxel2))
+
+    if registration_voxel_size > float(voxel_size):
+        print(
+            f"Registration guard: requested voxel {float(voxel_size):.6g}, "
+            f"using {float(registration_voxel_size):.6g} to bound feature cloud size"
+        )
 
     # stage 0: raw clouds
     if step_callback is not None:
-        step_callback(0, 0, {"pcd1": pcd1, "pcd2": pcd2})
+        step_callback(
+            0,
+            0,
+            {
+                "pcd1": pcd1,
+                "pcd2": pcd2,
+                "pre_scale": pre_scale,
+                "registration_voxel_size": registration_voxel_size,
+            },
+        )
 
     # stage 1: built-in global RANSAC (single solve)
     result_ransac = run_RANSAC(
@@ -160,7 +335,7 @@ def run_full_registration(
         pcd2_down,
         pcd1_fpfh,
         pcd2_fpfh,
-        voxel_size,
+        registration_voxel_size,
         ransac_dist_multiplier,
         ransac_max_iter,
         ransac_validation,
@@ -170,23 +345,39 @@ def run_full_registration(
         step_callback(
             1,
             1,
-            {"ransac": result_ransac, "total": 1, "configured_max_iter": ransac_max_iter},
+            {
+                "ransac": result_ransac,
+                "total": 1,
+                "configured_max_iter": ransac_max_iter,
+                "registration_voxel_size": registration_voxel_size,
+            },
         )
 
     # stage 2: built-in local ICP (single solve)
+    adaptive_icp_multiplier = float(icp_dist_multiplier)
+    adaptive_icp_iters = int(icp_max_iter)
+    if float(result_ransac.fitness) < 0.02:
+        adaptive_icp_multiplier = max(adaptive_icp_multiplier, 1.1)
+        adaptive_icp_iters = max(adaptive_icp_iters, 90)
+
     result_icp = run_ICP(
         pcd1,
         pcd2,
         result_ransac.transformation,
-        voxel_size,
-        icp_dist_multiplier,
-        icp_max_iter,
+        registration_voxel_size,
+        adaptive_icp_multiplier,
+        adaptive_icp_iters,
     )
     if step_callback is not None:
         step_callback(
             2,
             1,
-            {"icp": result_icp, "total": 1, "configured_max_iter": icp_max_iter},
+            {
+                "icp": result_icp,
+                "total": 1,
+                "configured_max_iter": icp_max_iter,
+                "registration_voxel_size": registration_voxel_size,
+            },
         )
 
     return {
@@ -195,6 +386,8 @@ def run_full_registration(
         "ransac": result_ransac,
         "icp": result_icp,
         "global_transform_model": global_transform_model,
+        "pre_scale": pre_scale,
+        "registration_voxel_size": registration_voxel_size,
     }
 
 if __name__ == "__main__": # this is so this does not run until the main window is open, allows this to be imported into test.py
