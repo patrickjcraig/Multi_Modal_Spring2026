@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QAbstractSpinBox, QButtonGroup, QMainWindow, QMess
 from ui_mainwindow import Ui_MainWindow
 from GUI.workspace_controller import WorkspaceController
 from GUI.scan_viewer_tab import ScanViewerTab
+from GUI.export_controller import ExportController
 
 # split main_window responsibilities into smaller controllers
 from GUI.registration_controller import RegistrationController
@@ -43,10 +44,16 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.workspace_controller = WorkspaceController(self)
         self.registration = RegistrationController(self)
         self.importer = ImportController(self)
+        self.exporter = ExportController(self)
 
         self.actionImport_THz = QAction("THz", self)
         self.actionImport_THz.setObjectName("actionImport_THz")
         self.menuImport_2.addAction(self.actionImport_THz)
+
+        self.actionExport_Registration = QAction("Export", self)
+        self.actionExport_Registration.setObjectName("actionExport_Registration")
+        self.actionExport_Registration.setShortcut("Ctrl+E")
+        self.menuFiles.addAction(self.actionExport_Registration)
 
         # The tab widget now lives in the .ui file; clear the placeholder page.
         self.scanTabs.clear()
@@ -92,6 +99,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
 
         self.actionSave_Workspace.triggered.connect(self.workspace_controller.save)
         self.actionLoad_Workspace.triggered.connect(self.workspace_controller.load)
+        self.actionExport_Registration.triggered.connect(self.exporter.export_current_registration_tiff_stack)
 
         self.actionImport_XRay.triggered.connect(self.importer.open_xray_dialog)
         self.actionImport_SAM.triggered.connect(self.importer.open_sam_dialog)
