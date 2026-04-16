@@ -145,6 +145,80 @@ class ImportController:
         else:
             mw.statusbar.showMessage(f"Unknown SAM import type: {params.import_type}")
 
+    def import_thz_data(self, params):
+        mw = self.main
+        try:
+            mw.statusbar.showMessage("Processing THz FFT image...")
+
+            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            cache_dir = os.path.join(repo_root, "generated", "thz_imports")
+            result = build_thz_fft_npy_volume(
+                t2t_path=params.path,
+                cmt_path=params.cmt_path,
+                target_freq_thz=params.target_freq_thz,
+                output_dir=cache_dir,
+                pseudo_depth_mm=params.pseudo_depth_mm,
+            )
+
+            mesh = None
+            pcd = None
+            modality = "thz-fft-image"
+            if params.pseudo_depth_mm > 0.0:
+                mesh, _level = get_mesh_from_array_volume(
+                    file_path=result["npy_path"],
+                    file_type="npy",
+                    voxel_size_mm=result["pixel_size_mm"],
+                    downsample_zyx=1,
+                    crop_zyx=None,
+                    level=0.5,
+                )
+                pcd = mesh.sample_points_poisson_disk(number_of_points=15000)
+                modality = "thz-height-map"
+
+            volume_source = VolumeSource(
+                path=result["npy_path"],
+                source_type="npy",
+                voxel_size_mm=result["pixel_size_mm"],
+                crop_zyx=None,
+                default_downsample_zyx=1,
+            )
+            metadata = {
+                "FFT target (THz)": f"{result['target_freq_thz']:.6g}",
+                "FFT actual (THz)": f"{result['actual_freq_thz']:.6g}",
+                "Pixel X/Y (mm)": f"{result['resolution_x_mm']:.6g}, {result['resolution_y_mm']:.6g}",
+                "Image XY": result["grid_shape_xy"],
+                "Extent X/Y (mm)": f"{result['extent_x_mm']:.6g}, {result['extent_y_mm']:.6g}",
+                "Pseudo depth (mm)": f"{result['pseudo_depth_mm']:.6g}",
+                "Z slices": result["z_slices"],
+                "Trace begin/dt (ps)": f"{result['begin_ps']:.6g}, {result['time_step_ps']:.6g}",
+                "Trace samples": result["trace_samples"],
+                "Missing pixels": result["missing_pixels"],
+                "Scaled pixel map": "ready" if result["scaled_pixel_map_ready"] else "partial",
+                "Registration": "3D pseudo-volume ready" if pcd is not None else "image-only (no point cloud)",
+                "3D volume": "height-map pseudo volume" if pcd is not None else "single-slice THz FFT image",
+            }
+            if result["cmt_path"]:
+                metadata["THz metadata"] = os.path.basename(result["cmt_path"])
+            if result["size_x_mm"] is not None and result["size_y_mm"] is not None:
+                metadata["Scan size X/Y (mm)"] = f"{result['size_x_mm']:.6g}, {result['size_y_mm']:.6g}"
+
+            mw.add_scan_tab(
+                name=f"Imported THz {mw.scanTabs.count() + 1}",
+                pcd=pcd,
+                mesh=mesh,
+                modality=modality,
+                path=params.path,
+                voxel_size_mm=result["pixel_size_mm"],
+                volume_source=volume_source,
+                metadata=metadata,
+            )
+
+            mw.statusbar.showMessage("THz FFT image imported successfully.")
+
+        except Exception as e:
+            QMessageBox.critical(mw, "THz Import Error", str(e))
+            mw.statusbar.showMessage("Error importing THz FFT image.")
+
     def load_h5(self, params):
         self._load_array_file(params, file_type="h5")
 
