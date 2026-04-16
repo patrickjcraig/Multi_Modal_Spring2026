@@ -11,10 +11,143 @@ GLOBAL_TRANSFORM_RIGID = "rigid"
 GLOBAL_TRANSFORM_SIMILARITY = "similarity"
 MAX_REGISTRATION_POINTS = 120_000
 MAX_FEATURE_POINTS = 60_000
+SIMILARITY_PRESCALE_MIN = 0.80
+SIMILARITY_PRESCALE_MAX = 1.25
+SIMILARITY_LOW_CONFIDENCE_DAMPING = 0.35
+SIMILARITY_MIN_CONFIDENCE_FULL_APPLY = 0.45
+SPACING_PRESCALE_MIN = 0.70
+SPACING_PRESCALE_MAX = 1.50
+SPACING_PRESCALE_TRIGGER = 0.02
 
 
 def uses_uniform_scaling(global_transform_model):
     return global_transform_model == GLOBAL_TRANSFORM_SIMILARITY
+
+
+def _extract_uniform_scale(transformation):
+    linear = np.asarray(transformation, dtype=float)[:3, :3]
+    column_norms = np.linalg.norm(linear, axis=0)
+    return float(np.mean(column_norms))
+
+
+def _transform_is_finite(transformation):
+    t = np.asarray(transformation, dtype=float)
+    return t.shape == (4, 4) and bool(np.all(np.isfinite(t)))
+
+
+def _resolve_ransac_confidence(validation_iterations):
+    """Map legacy UI input to Open3D's confidence parameter.
+
+    Open3D 0.19 expects RANSACConvergenceCriteria(max_iteration, confidence).
+    The existing UI exposes an integer field historically treated like
+    "validation iterations". We preserve that UX by mapping integers >= 2 to
+    confidence=1.0 (disable early stop) and allowing direct [0,1] confidence
+    if a float is supplied programmatically.
+    """
+    try:
+        value = float(validation_iterations)
+    except Exception:
+        return 1.0
+
+    if not np.isfinite(value):
+        return 1.0
+    if value >= 2.0:
+        return 1.0
+    return float(np.clip(value, 0.90, 1.0))
+
+
+def _apply_spacing_prescale_if_available(source_pcd, source_spacing_mm, target_spacing_mm):
+    if source_spacing_mm is None or target_spacing_mm is None:
+        return {
+            "enabled": False,
+            "applied": False,
+            "scale": 1.0,
+            "method": "spacing_unavailable",
+            "confidence": 0.0,
+            "detail": "Missing source/target spacing metadata.",
+        }
+
+    try:
+        src = float(source_spacing_mm)
+        dst = float(target_spacing_mm)
+    except Exception:
+        return {
+            "enabled": False,
+            "applied": False,
+            "scale": 1.0,
+            "method": "spacing_invalid",
+            "confidence": 0.0,
+            "detail": "Could not parse spacing metadata.",
+        }
+
+    if (not np.isfinite(src)) or (not np.isfinite(dst)) or src <= 0.0 or dst <= 0.0:
+        return {
+            "enabled": False,
+            "applied": False,
+            "scale": 1.0,
+            "method": "spacing_invalid",
+            "confidence": 0.0,
+            "detail": "Spacing values must be finite and > 0.",
+        }
+
+    raw_scale = float(dst / src)
+    if abs(raw_scale - 1.0) <= SPACING_PRESCALE_TRIGGER:
+        return {
+            "enabled": True,
+            "applied": False,
+            "scale": 1.0,
+            "method": "spacing_ratio",
+            "confidence": 0.95,
+            "detail": f"ratio={raw_scale:.6f} within trigger {SPACING_PRESCALE_TRIGGER:.3f}",
+        }
+
+    scale = float(np.clip(raw_scale, SPACING_PRESCALE_MIN, SPACING_PRESCALE_MAX))
+    source_pcd.scale(scale, source_pcd.get_center())
+    clipped = abs(scale - raw_scale) > 1e-9
+    return {
+        "enabled": True,
+        "applied": True,
+        "scale": scale,
+        "method": "spacing_ratio",
+        "confidence": 0.95,
+        "detail": f"raw={raw_scale:.6f} clipped={clipped}",
+    }
+
+
+def _combine_prescale_context(spacing_ctx, similarity_ctx):
+    contexts = [ctx for ctx in (spacing_ctx, similarity_ctx) if isinstance(ctx, dict)]
+    applied = [ctx for ctx in contexts if bool(ctx.get("applied"))]
+    if not contexts:
+        return {
+            "enabled": False,
+            "applied": False,
+            "scale": 1.0,
+            "method": "none",
+            "confidence": 0.0,
+            "detail": "",
+            "components": [],
+        }
+
+    combined_scale = 1.0
+    for ctx in applied:
+        try:
+            combined_scale *= float(ctx.get("scale", 1.0))
+        except Exception:
+            pass
+
+    methods = [str(ctx.get("method", "unknown")) for ctx in applied]
+    details = [str(ctx.get("detail", "")) for ctx in contexts if str(ctx.get("detail", ""))]
+    confidence = max([float(ctx.get("confidence", 0.0)) for ctx in contexts] + [0.0])
+
+    return {
+        "enabled": True,
+        "applied": bool(applied),
+        "scale": float(combined_scale),
+        "method": "+".join(methods) if methods else "none",
+        "confidence": float(confidence),
+        "detail": " | ".join(details),
+        "components": contexts,
+    }
 
 
 def _apply_uniform_prescale_if_enabled(source_pcd, target_pcd, global_transform_model):
@@ -28,10 +161,23 @@ def _apply_uniform_prescale_if_enabled(source_pcd, target_pcd, global_transform_
             "detail": "Global transform model is rigid.",
         }
 
-    estimate = estimate_global_scale(source_pcd, target_pcd)
+    estimate = estimate_global_scale(
+        source_pcd,
+        target_pcd,
+        min_scale=SIMILARITY_PRESCALE_MIN,
+        max_scale=SIMILARITY_PRESCALE_MAX,
+    )
     scale = float(estimate.scale)
     if not np.isfinite(scale) or scale <= 0:
         scale = 1.0
+
+    # Keep similarity mode close to rigid when confidence is low.
+    confidence = float(estimate.confidence)
+    if confidence < SIMILARITY_MIN_CONFIDENCE_FULL_APPLY:
+        delta = scale - 1.0
+        scale = 1.0 + delta * SIMILARITY_LOW_CONFIDENCE_DAMPING
+
+    scale = float(np.clip(scale, SIMILARITY_PRESCALE_MIN, SIMILARITY_PRESCALE_MAX))
 
     center = source_pcd.get_center()
     source_pcd.scale(scale, center)
@@ -40,7 +186,7 @@ def _apply_uniform_prescale_if_enabled(source_pcd, target_pcd, global_transform_
         "applied": True,
         "scale": scale,
         "method": estimate.method,
-        "confidence": float(estimate.confidence),
+        "confidence": confidence,
         "detail": estimate.detail,
     }
 
@@ -187,7 +333,7 @@ def run_RANSAC(
         )
 
     per_attempt_iter = max(20000, int(max_iterations) // max(1, len(strategies)))
-    per_attempt_validation = max(500, int(validation_iterations))
+    per_attempt_confidence = _resolve_ransac_confidence(validation_iterations)
 
     best_result = None
     best_name = ""
@@ -207,7 +353,7 @@ def run_RANSAC(
             o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling),
             4,
             checkers,
-            o3d.pipelines.registration.RANSACConvergenceCriteria(per_attempt_iter, per_attempt_validation),
+            o3d.pipelines.registration.RANSACConvergenceCriteria(per_attempt_iter, per_attempt_confidence),
         )
         if best_result is None or _result_score(result) > _result_score(best_result):
             best_result = result
@@ -280,6 +426,8 @@ def run_full_registration(
     ransac_step=1,
     icp_step=1,
     global_transform_model=GLOBAL_TRANSFORM_RIGID,
+    source_spacing_mm=None,
+    target_spacing_mm=None,
 ):
     """Run full registration and emit only stage-complete callbacks.
 
@@ -295,22 +443,50 @@ def run_full_registration(
         "confidence": 0.0,
         "detail": "",
     }
+    spacing_pre_scale = {
+        "enabled": False,
+        "applied": False,
+        "scale": 1.0,
+        "method": "spacing_unavailable",
+        "confidence": 0.0,
+        "detail": "",
+    }
+    similarity_pre_scale = {
+        "enabled": False,
+        "applied": False,
+        "scale": 1.0,
+        "method": "disabled",
+        "confidence": 0.0,
+        "detail": "",
+    }
 
     if source_pcd is not None and target_pcd is not None:
         pcd1 = copy.deepcopy(source_pcd)
         pcd2 = copy.deepcopy(target_pcd)
         pcd1 = _cap_point_count_for_registration(pcd1)
         pcd2 = _cap_point_count_for_registration(pcd2)
-        pre_scale = _apply_uniform_prescale_if_enabled(pcd1, pcd2, global_transform_model)
+        spacing_pre_scale = _apply_spacing_prescale_if_available(pcd1, source_spacing_mm, target_spacing_mm)
+        similarity_pre_scale = _apply_uniform_prescale_if_enabled(pcd1, pcd2, global_transform_model)
+        pre_scale = _combine_prescale_context(spacing_pre_scale, similarity_pre_scale)
         pcd1_down, pcd1_fpfh, voxel1 = preprocess_point_cloud(pcd1, voxel_size)
         pcd2_down, pcd2_fpfh, voxel2 = preprocess_point_cloud(pcd2, voxel_size)
         registration_voxel_size = max(float(voxel_size), float(voxel1), float(voxel2))
     else:
         pcd1, pcd2, _pcd1_down, _pcd2_down, _pcd1_fpfh, _pcd2_fpfh, _effective_voxel = import_dataset(voxel_size)
-        pre_scale = _apply_uniform_prescale_if_enabled(pcd1, pcd2, global_transform_model)
+        spacing_pre_scale = _apply_spacing_prescale_if_available(pcd1, source_spacing_mm, target_spacing_mm)
+        similarity_pre_scale = _apply_uniform_prescale_if_enabled(pcd1, pcd2, global_transform_model)
+        pre_scale = _combine_prescale_context(spacing_pre_scale, similarity_pre_scale)
         pcd1_down, pcd1_fpfh, voxel1 = preprocess_point_cloud(pcd1, voxel_size)
         pcd2_down, pcd2_fpfh, voxel2 = preprocess_point_cloud(pcd2, voxel_size)
         registration_voxel_size = max(float(voxel_size), float(voxel1), float(voxel2))
+
+    if spacing_pre_scale.get("enabled"):
+        print(
+            "Spacing pre-scale:",
+            f"applied={bool(spacing_pre_scale.get('applied'))}",
+            f"scale={float(spacing_pre_scale.get('scale', 1.0)):.6f}",
+            f"detail={spacing_pre_scale.get('detail', '')}",
+        )
 
     if registration_voxel_size > float(voxel_size):
         print(
@@ -327,6 +503,8 @@ def run_full_registration(
                 "pcd1": pcd1,
                 "pcd2": pcd2,
                 "pre_scale": pre_scale,
+                "spacing_pre_scale": spacing_pre_scale,
+                "similarity_pre_scale": similarity_pre_scale,
                 "registration_voxel_size": registration_voxel_size,
             },
         )
@@ -372,8 +550,21 @@ def run_full_registration(
         global_transform_model=global_transform_model,
     )
     if uses_uniform_scaling(global_transform_model):
-        icp_scale = float(np.mean(np.linalg.norm(np.asarray(result_icp.transformation)[:3, :3], axis=0)))
+        icp_scale = _extract_uniform_scale(result_icp.transformation)
+        transform_finite = _transform_is_finite(result_icp.transformation)
+        scale_plausible = np.isfinite(icp_scale) and 0.85 <= float(icp_scale) <= 1.15
         print(f"Local ICP similarity scale: {icp_scale:.6f}")
+        if (not transform_finite) or (not scale_plausible):
+            print("Local ICP similarity became unstable; rerunning local stage as rigid fallback.")
+            result_icp = run_ICP(
+                pcd1,
+                pcd2,
+                result_ransac.transformation,
+                registration_voxel_size,
+                adaptive_icp_multiplier,
+                adaptive_icp_iters,
+                global_transform_model=GLOBAL_TRANSFORM_RIGID,
+            )
     if step_callback is not None:
         step_callback(
             2,
@@ -393,6 +584,8 @@ def run_full_registration(
         "icp": result_icp,
         "global_transform_model": global_transform_model,
         "pre_scale": pre_scale,
+        "spacing_pre_scale": spacing_pre_scale,
+        "similarity_pre_scale": similarity_pre_scale,
         "registration_voxel_size": registration_voxel_size,
     }
 

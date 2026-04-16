@@ -39,6 +39,7 @@ class RegistrationController(QObject):
         self._display_target_mesh_base = None
         self.pre_scale_context = None
         self.registration_voxel_size_used = None
+        self.scale_diagnostics = None
 
     # ------------------------------------------------------------------
     # Public methods hooked to UI signals
@@ -82,14 +83,28 @@ class RegistrationController(QObject):
         ransac_validation = mw.spinBox_ransac_validation.value()
         icp_dist_mult = mw.spinBox_icp_dist.value()
         self.global_transform_model = mw.combo_global_transform_model.currentData() or "rigid"
+        self.scale_diagnostics = self._registration_scale_diagnostics(self.source_scan, self.target_scan)
+        source_spacing_mm = self._effective_spacing_mm(self.source_scan)
+        target_spacing_mm = self._effective_spacing_mm(self.target_scan)
         if self.global_transform_model == "similarity":
             mw.label_ransac_rmse_label.setText("Inlier RMSE / Scale:")
         else:
             mw.label_ransac_rmse_label.setText("Inlier RMSE:")
+        diag_note = ""
+        if self.scale_diagnostics is not None:
+            spacing_ratio = self.scale_diagnostics.get("spacing_ratio")
+            extent_ratio = self.scale_diagnostics.get("extent_ratio")
+            if spacing_ratio is not None:
+                diag_note += f" | spacing ratio={float(spacing_ratio):.3f}"
+            if extent_ratio is not None:
+                diag_note += f" | bbox ratio={float(extent_ratio):.3f}"
         mw.statusbar.showMessage(
             f"Running {self._describe_global_stage()} -> {self.local_stage_name}: "
-            f"{self.source_scan.name} -> {self.target_scan.name}"
+            f"{self.source_scan.name} -> {self.target_scan.name}{diag_note}"
         )
+
+        if self.scale_diagnostics is not None:
+            print("Registration scale diagnostics:", self.scale_diagnostics)
 
         self._display_source_mesh_base = self._prepare_display_mesh(
             self.source_scan.mesh if self.source_scan is not None else None
@@ -115,6 +130,7 @@ class RegistrationController(QObject):
                 "Global stage": self._describe_global_stage(),
                 "Local stage": self.local_stage_name,
                 "Pre-scale": "pending",
+                "Scale diagnostics": self._format_scale_diagnostics(self.scale_diagnostics),
                 "3D volume": "reference scan volume attached",
             },
         )
@@ -128,6 +144,8 @@ class RegistrationController(QObject):
             source_pcd=self.source_scan.pcd,
             target_pcd=self.target_scan.pcd,
             global_transform_model=self.global_transform_model,
+            source_spacing_mm=source_spacing_mm,
+            target_spacing_mm=target_spacing_mm,
         )
         self.icp_thread.step.connect(self._on_registration_step)
         self.icp_thread.finished.connect(self._on_registration_complete)
@@ -161,6 +179,19 @@ class RegistrationController(QObject):
         else:
             voxel_size = mw.spinBox_voxel_size.value()
 
+        bbox_diagonals = []
+        for scan in scans:
+            bbox = self._pcd_bbox_metrics(scan.pcd if scan is not None else None)
+            if bbox is not None and np.isfinite(bbox["diagonal"]) and bbox["diagonal"] > 0:
+                bbox_diagonals.append(float(bbox["diagonal"]))
+
+        # Keep auto voxel physically meaningful relative to object size.
+        if bbox_diagonals:
+            min_diag = min(bbox_diagonals)
+            min_reasonable = max(1e-5, 0.005 * min_diag)
+            max_reasonable = max(min_reasonable, 0.08 * min_diag)
+            voxel_size = float(np.clip(voxel_size, min_reasonable, max_reasonable))
+
         max_point_count = max(point_counts, default=5000)
         dist_multiplier = 1.5
         max_iterations = 40000
@@ -181,6 +212,12 @@ class RegistrationController(QObject):
             if spacing_ratio > 1.25:
                 dist_multiplier += 0.2
                 max_iterations = int(max_iterations * 1.2)
+
+        if len(bbox_diagonals) == 2:
+            extent_ratio = max(bbox_diagonals) / max(min(bbox_diagonals), 1e-9)
+            if extent_ratio > 1.15:
+                dist_multiplier += 0.1
+                max_iterations = int(max_iterations * 1.1)
 
         validation_iterations = max(1000, int(max_iterations * 0.02))
         validation_iterations = min(validation_iterations, 100000)
@@ -206,8 +243,11 @@ class RegistrationController(QObject):
         mw.spinBox_ransac_validation.setValue(suggestions["ransac_validation"])
 
         if show_status:
+            details = self._registration_scale_diagnostics(source_scan or self.source_scan, target_scan or self.target_scan)
+            details_text = self._format_scale_diagnostics(details)
             mw.statusbar.showMessage(
-                "Suggested registration parameters updated from scan spacing and RANSAC mode."
+                "Suggested registration parameters updated from scan spacing/size and RANSAC mode"
+                + (f" | {details_text}" if details_text else "")
             )
 
     def prev_step(self):
@@ -457,6 +497,8 @@ class RegistrationController(QObject):
                 f" | Pre-scale: x{float(self.pre_scale_context.get('scale', 1.0)):.6f}"
                 f" ({self.pre_scale_context.get('method', 'unknown')})"
             )
+        if self.scale_diagnostics is not None:
+            info_text += f" | Scale diagnostics: {self._format_scale_diagnostics(self.scale_diagnostics)}"
         if stage == 1 and payload.get("ransac") is not None and self.global_transform_model == "similarity":
             info_text += f" | Global scale: {self._extract_uniform_scale(payload['ransac'].transformation):.6f}"
         elif stage == 2 and payload.get("icp") is not None and self.global_transform_model == "similarity":
@@ -518,3 +560,67 @@ class RegistrationController(QObject):
             downsampling = max(1, int(scan.metadata.get("Downsampling", 1)))
 
         return float(scan.voxel_size_mm) * float(downsampling)
+
+    @staticmethod
+    def _pcd_bbox_metrics(pcd):
+        if pcd is None:
+            return None
+        pts = np.asarray(pcd.points, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 3 or pts.shape[1] != 3:
+            return None
+        mins = np.min(pts, axis=0)
+        maxs = np.max(pts, axis=0)
+        extents = maxs - mins
+        return {
+            "extent_x": float(extents[0]),
+            "extent_y": float(extents[1]),
+            "extent_z": float(extents[2]),
+            "diagonal": float(np.linalg.norm(extents)),
+        }
+
+    def _registration_scale_diagnostics(self, source_scan, target_scan):
+        if source_scan is None or target_scan is None:
+            return None
+
+        src_spacing = self._effective_spacing_mm(source_scan)
+        dst_spacing = self._effective_spacing_mm(target_scan)
+        src_bbox = self._pcd_bbox_metrics(source_scan.pcd)
+        dst_bbox = self._pcd_bbox_metrics(target_scan.pcd)
+
+        spacing_ratio = None
+        if src_spacing is not None and dst_spacing is not None and src_spacing > 0 and dst_spacing > 0:
+            spacing_ratio = float(max(src_spacing, dst_spacing) / max(min(src_spacing, dst_spacing), 1e-9))
+
+        extent_ratio = None
+        if src_bbox is not None and dst_bbox is not None:
+            d1 = float(src_bbox["diagonal"])
+            d2 = float(dst_bbox["diagonal"])
+            if d1 > 0 and d2 > 0 and np.isfinite(d1) and np.isfinite(d2):
+                extent_ratio = float(max(d1, d2) / max(min(d1, d2), 1e-9))
+
+        diagnostics = {
+            "source_spacing_mm": None if src_spacing is None else float(src_spacing),
+            "target_spacing_mm": None if dst_spacing is None else float(dst_spacing),
+            "spacing_ratio": spacing_ratio,
+            "source_bbox": src_bbox,
+            "target_bbox": dst_bbox,
+            "extent_ratio": extent_ratio,
+        }
+        return diagnostics
+
+    @staticmethod
+    def _format_scale_diagnostics(diagnostics):
+        if diagnostics is None:
+            return ""
+        chunks = []
+        src_spacing = diagnostics.get("source_spacing_mm")
+        dst_spacing = diagnostics.get("target_spacing_mm")
+        spacing_ratio = diagnostics.get("spacing_ratio")
+        extent_ratio = diagnostics.get("extent_ratio")
+        if src_spacing is not None and dst_spacing is not None:
+            chunks.append(f"spacing(mm) src={src_spacing:.6g} tgt={dst_spacing:.6g}")
+        if spacing_ratio is not None:
+            chunks.append(f"spacing_ratio={float(spacing_ratio):.3f}")
+        if extent_ratio is not None:
+            chunks.append(f"bbox_ratio={float(extent_ratio):.3f}")
+        return " | ".join(chunks)

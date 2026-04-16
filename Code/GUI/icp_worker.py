@@ -28,6 +28,8 @@ class ICPWorkerThread(QThread):
         source_pcd=None,
         target_pcd=None,
         global_transform_model="rigid",
+        source_spacing_mm=None,
+        target_spacing_mm=None,
     ):
         super().__init__()
         self.voxel_size = voxel_size
@@ -38,6 +40,8 @@ class ICPWorkerThread(QThread):
         self.source_pcd = source_pcd
         self.target_pcd = target_pcd
         self.global_transform_model = global_transform_model
+        self.source_spacing_mm = source_spacing_mm
+        self.target_spacing_mm = target_spacing_mm
     
     def run(self):
         """Run the ICP registration in a background thread."""
@@ -57,6 +61,8 @@ class ICPWorkerThread(QThread):
                 target_pcd=self.target_pcd,
                 step_callback=cb,
                 global_transform_model=self.global_transform_model,
+                source_spacing_mm=self.source_spacing_mm,
+                target_spacing_mm=self.target_spacing_mm,
             )
             self.finished.emit(results)
         except Exception as e:
