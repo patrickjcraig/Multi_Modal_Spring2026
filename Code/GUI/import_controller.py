@@ -158,6 +158,7 @@ class ImportController:
                 target_freq_thz=params.target_freq_thz,
                 output_dir=cache_dir,
                 pseudo_depth_mm=params.pseudo_depth_mm,
+                min_intensity_au=params.min_intensity_au,
             )
 
             mesh = None
@@ -190,6 +191,8 @@ class ImportController:
                 "Extent X/Y (mm)": f"{result['extent_x_mm']:.6g}, {result['extent_y_mm']:.6g}",
                 "Pseudo depth (mm)": f"{result['pseudo_depth_mm']:.6g}",
                 "Z slices": result["z_slices"],
+                "Minimum mesh intensity (a.u.)": f"{result['min_intensity_au']:.6g}",
+                "Intensity range (a.u.)": f"{result['intensity_min_au']:.6g}, {result['intensity_max_au']:.6g}",
                 "Trace begin/dt (ps)": f"{result['begin_ps']:.6g}, {result['time_step_ps']:.6g}",
                 "Trace samples": result["trace_samples"],
                 "Missing pixels": result["missing_pixels"],
@@ -197,6 +200,9 @@ class ImportController:
                 "Registration": "3D pseudo-volume ready" if pcd is not None else "image-only (no point cloud)",
                 "3D volume": "height-map pseudo volume" if pcd is not None else "single-slice THz FFT image",
             }
+            if result["mesh_kept_pixels"] is not None:
+                metadata["Mesh kept pixels"] = result["mesh_kept_pixels"]
+                metadata["Mesh kept fraction"] = f"{100.0 * result['mesh_kept_fraction']:.2f}%"
             if result["cmt_path"]:
                 metadata["THz metadata"] = os.path.basename(result["cmt_path"])
             if result["size_x_mm"] is not None and result["size_y_mm"] is not None:
