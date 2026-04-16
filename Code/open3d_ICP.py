@@ -18,6 +18,7 @@ SIMILARITY_MIN_CONFIDENCE_FULL_APPLY = 0.45
 SPACING_PRESCALE_MIN = 0.70
 SPACING_PRESCALE_MAX = 1.50
 SPACING_PRESCALE_TRIGGER = 0.02
+SPACING_BBOX_AGREEMENT_LOG_TOL = 0.18
 
 
 def uses_uniform_scaling(global_transform_model):
@@ -56,7 +57,7 @@ def _resolve_ransac_confidence(validation_iterations):
     return float(np.clip(value, 0.90, 1.0))
 
 
-def _apply_spacing_prescale_if_available(source_pcd, source_spacing_mm, target_spacing_mm):
+def _apply_spacing_prescale_if_available(source_pcd, target_pcd, source_spacing_mm, target_spacing_mm):
     if source_spacing_mm is None or target_spacing_mm is None:
         return {
             "enabled": False,
@@ -91,6 +92,33 @@ def _apply_spacing_prescale_if_available(source_pcd, source_spacing_mm, target_s
         }
 
     raw_scale = float(dst / src)
+
+    src_pts = np.asarray(source_pcd.points, dtype=float)
+    tgt_pts = np.asarray(target_pcd.points, dtype=float)
+    bbox_ratio = None
+    if src_pts.ndim == 2 and tgt_pts.ndim == 2 and src_pts.shape[0] >= 3 and tgt_pts.shape[0] >= 3:
+        src_ext = np.max(src_pts, axis=0) - np.min(src_pts, axis=0)
+        tgt_ext = np.max(tgt_pts, axis=0) - np.min(tgt_pts, axis=0)
+        src_diag = float(np.linalg.norm(src_ext))
+        tgt_diag = float(np.linalg.norm(tgt_ext))
+        if np.isfinite(src_diag) and np.isfinite(tgt_diag) and src_diag > 1e-12 and tgt_diag > 1e-12:
+            bbox_ratio = float(tgt_diag / src_diag)
+
+    if bbox_ratio is not None and bbox_ratio > 0.0 and np.isfinite(bbox_ratio):
+        mismatch = abs(np.log(raw_scale) - np.log(float(bbox_ratio)))
+        if mismatch > SPACING_BBOX_AGREEMENT_LOG_TOL:
+            return {
+                "enabled": True,
+                "applied": False,
+                "scale": 1.0,
+                "method": "spacing_ratio_rejected",
+                "confidence": 0.4,
+                "detail": (
+                    f"raw={raw_scale:.6f} bbox_ratio={bbox_ratio:.6f} "
+                    f"mismatch_log={mismatch:.4f} > tol={SPACING_BBOX_AGREEMENT_LOG_TOL:.4f}"
+                ),
+            }
+
     if abs(raw_scale - 1.0) <= SPACING_PRESCALE_TRIGGER:
         return {
             "enabled": True,
@@ -98,7 +126,10 @@ def _apply_spacing_prescale_if_available(source_pcd, source_spacing_mm, target_s
             "scale": 1.0,
             "method": "spacing_ratio",
             "confidence": 0.95,
-            "detail": f"ratio={raw_scale:.6f} within trigger {SPACING_PRESCALE_TRIGGER:.3f}",
+            "detail": (
+                f"ratio={raw_scale:.6f} within trigger {SPACING_PRESCALE_TRIGGER:.3f}"
+                + (f" bbox_ratio={bbox_ratio:.6f}" if bbox_ratio is not None else "")
+            ),
         }
 
     scale = float(np.clip(raw_scale, SPACING_PRESCALE_MIN, SPACING_PRESCALE_MAX))
@@ -110,7 +141,10 @@ def _apply_spacing_prescale_if_available(source_pcd, source_spacing_mm, target_s
         "scale": scale,
         "method": "spacing_ratio",
         "confidence": 0.95,
-        "detail": f"raw={raw_scale:.6f} clipped={clipped}",
+        "detail": (
+            f"raw={raw_scale:.6f} clipped={clipped}"
+            + (f" bbox_ratio={bbox_ratio:.6f}" if bbox_ratio is not None else "")
+        ),
     }
 
 
@@ -411,6 +445,33 @@ def run_ICP(
         o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling),
         criteria=criteria,
     )
+
+    # In rigid mode, a point-to-plane polish step usually removes residual tilt.
+    if (not with_scaling) and float(result.fitness) > 0.0:
+        p1 = copy.deepcopy(pcd1)
+        p2 = copy.deepcopy(pcd2)
+        normal_radius = max(float(voxel_size) * 2.0, 1e-6)
+        p1.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=normal_radius, max_nn=40))
+        p2.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=normal_radius, max_nn=40))
+
+        plane_distance = max(float(distance_threshold) * 0.6, 1e-6)
+        plane_criteria = o3d.pipelines.registration.ICPConvergenceCriteria(
+            max_iteration=max(30, int(max_iterations) // 2)
+        )
+        plane_result = o3d.pipelines.registration.registration_icp(
+            p1,
+            p2,
+            plane_distance,
+            result.transformation,
+            o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+            criteria=plane_criteria,
+        )
+
+        point_score = (float(result.fitness), -float(result.inlier_rmse))
+        plane_score = (float(plane_result.fitness), -float(plane_result.inlier_rmse))
+        if plane_score > point_score:
+            result = plane_result
+
     return result
 
 def run_full_registration(
@@ -465,7 +526,7 @@ def run_full_registration(
         pcd2 = copy.deepcopy(target_pcd)
         pcd1 = _cap_point_count_for_registration(pcd1)
         pcd2 = _cap_point_count_for_registration(pcd2)
-        spacing_pre_scale = _apply_spacing_prescale_if_available(pcd1, source_spacing_mm, target_spacing_mm)
+        spacing_pre_scale = _apply_spacing_prescale_if_available(pcd1, pcd2, source_spacing_mm, target_spacing_mm)
         similarity_pre_scale = _apply_uniform_prescale_if_enabled(pcd1, pcd2, global_transform_model)
         pre_scale = _combine_prescale_context(spacing_pre_scale, similarity_pre_scale)
         pcd1_down, pcd1_fpfh, voxel1 = preprocess_point_cloud(pcd1, voxel_size)
@@ -473,7 +534,7 @@ def run_full_registration(
         registration_voxel_size = max(float(voxel_size), float(voxel1), float(voxel2))
     else:
         pcd1, pcd2, _pcd1_down, _pcd2_down, _pcd1_fpfh, _pcd2_fpfh, _effective_voxel = import_dataset(voxel_size)
-        spacing_pre_scale = _apply_spacing_prescale_if_available(pcd1, source_spacing_mm, target_spacing_mm)
+        spacing_pre_scale = _apply_spacing_prescale_if_available(pcd1, pcd2, source_spacing_mm, target_spacing_mm)
         similarity_pre_scale = _apply_uniform_prescale_if_enabled(pcd1, pcd2, global_transform_model)
         pre_scale = _combine_prescale_context(spacing_pre_scale, similarity_pre_scale)
         pcd1_down, pcd1_fpfh, voxel1 = preprocess_point_cloud(pcd1, voxel_size)
