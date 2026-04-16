@@ -4,6 +4,7 @@ import numpy as np
 from PySide6.QtCore import QObject
 
 from GUI.icp_worker import ICPWorkerThread
+from makeGeometry import VolumeSource, load_ct_volume_preview
 from Utils.dataframe_utils import pcd_to_df, tf_to_df, reg_to_df
 
 
@@ -40,6 +41,8 @@ class RegistrationController(QObject):
         self.pre_scale_context = None
         self.registration_voxel_size_used = None
         self.scale_diagnostics = None
+        self.result_volume_source = None
+        self.result_volume_status = "pending fused reconstruction"
 
     # ------------------------------------------------------------------
     # Public methods hooked to UI signals
@@ -113,17 +116,14 @@ class RegistrationController(QObject):
             self.target_scan.mesh if self.target_scan is not None else None
         )
 
-        result_volume_source = None
-        if self.target_scan is not None and self.target_scan.volume_source is not None:
-            result_volume_source = self.target_scan.volume_source
-        elif self.source_scan is not None:
-            result_volume_source = self.source_scan.volume_source
+        self.result_volume_source = None
+        self.result_volume_status = "pending fused reconstruction"
 
         self.result_scan_id = mw.add_scan_tab(
             name=f"Registration {self.source_scan.name} -> {self.target_scan.name}",
             modality="registration-result",
             is_result=True,
-            volume_source=result_volume_source,
+            volume_source=None,
             metadata={
                 "Source": self.source_scan.name,
                 "Target": self.target_scan.name,
@@ -131,7 +131,7 @@ class RegistrationController(QObject):
                 "Local stage": self.local_stage_name,
                 "Pre-scale": "pending",
                 "Scale diagnostics": self._format_scale_diagnostics(self.scale_diagnostics),
-                "3D volume": "reference scan volume attached",
+                "3D volume": "pending fused reconstruction",
             },
         )
 
@@ -334,6 +334,28 @@ class RegistrationController(QObject):
             self.current_step = 0
         self._display_registration_results()
 
+        fused_volume_source, fused_volume_metadata = self._build_fused_registration_volume_source()
+        if fused_volume_source is not None:
+            self.result_volume_source = fused_volume_source
+            shape_zyx = fused_volume_metadata.get("shape_zyx")
+            voxel_size = fused_volume_metadata.get("voxel_size")
+            method = fused_volume_metadata.get("fusion_method", "fused reconstruction")
+            self.result_volume_status = (
+                f"{method} ready"
+                f" | shape ZYX={shape_zyx}"
+                f" | voxel={float(voxel_size):.6g}"
+            )
+            fallback_reason = fused_volume_metadata.get("overlay_fallback_reason")
+            if fallback_reason:
+                self.result_volume_status += f" | fallback={fallback_reason}"
+            mw.update_scan_tab(self.result_scan_id, volume_source=fused_volume_source)
+        else:
+            reason = fused_volume_metadata.get("reason", "unknown")
+            self.result_volume_source = None
+            self.result_volume_status = f"fused reconstruction unavailable ({reason})"
+
+        self._display_registration_results()
+
         mw.btn_prev_step.setEnabled(self.current_step > 0)
         mw.btn_next_step.setEnabled(False)
 
@@ -491,6 +513,7 @@ class RegistrationController(QObject):
             f"Global: {self._describe_global_stage()}",
             f"Local: {self.local_stage_name}",
             f"Stage: {mw.label_step_info.text()}",
+            f"3D volume: {self.result_volume_status}",
         ])
         if self.pre_scale_context and self.pre_scale_context.get("enabled"):
             info_text += (
@@ -624,3 +647,263 @@ class RegistrationController(QObject):
         if extent_ratio is not None:
             chunks.append(f"bbox_ratio={float(extent_ratio):.3f}")
         return " | ".join(chunks)
+
+    def _build_fused_registration_volume_source(self):
+        overlay_volume, overlay_meta = self._build_fused_overlay_volume_source()
+        if overlay_volume is not None:
+            return overlay_volume, overlay_meta
+
+        pointcloud_volume, pointcloud_meta = self._build_fused_pointcloud_volume_source()
+        if pointcloud_volume is not None:
+            if overlay_meta:
+                pointcloud_meta["overlay_fallback_reason"] = overlay_meta.get("reason")
+            return pointcloud_volume, pointcloud_meta
+
+        return None, overlay_meta or pointcloud_meta
+
+    def _build_fused_overlay_volume_source(self):
+        if getattr(self, "icp_result", None) is None:
+            return None, {"reason": "missing ICP transform"}
+        if self.source_scan is None or self.target_scan is None:
+            return None, {"reason": "missing source/target scan records"}
+        if getattr(self.source_scan, "volume_source", None) is None:
+            return None, {"reason": "source scan has no reconstruction volume"}
+        if getattr(self.target_scan, "volume_source", None) is None:
+            return None, {"reason": "target scan has no reconstruction volume"}
+
+        try:
+            src_xyz, src_meta = load_ct_volume_preview(
+                volume_source=self.source_scan.volume_source,
+                downsample_zyx=max(1, int(getattr(self.source_scan.volume_source, "default_downsample_zyx", 1))),
+                crop_zyx=self.source_scan.volume_source.crop_zyx,
+                max_preview_voxels=16_000_000,
+            )
+            tgt_xyz, tgt_meta = load_ct_volume_preview(
+                volume_source=self.target_scan.volume_source,
+                downsample_zyx=max(1, int(getattr(self.target_scan.volume_source, "default_downsample_zyx", 1))),
+                crop_zyx=self.target_scan.volume_source.crop_zyx,
+                max_preview_voxels=16_000_000,
+            )
+        except Exception as exc:
+            return None, {"reason": f"preview load failed: {exc}"}
+
+        if src_xyz.size == 0 or tgt_xyz.size == 0:
+            return None, {"reason": "empty source or target preview volume"}
+
+        src_xyz = np.asarray(src_xyz, dtype=np.uint8)
+        tgt_xyz = np.asarray(tgt_xyz, dtype=np.uint8)
+
+        src_origin_zyx = src_meta.get("crop_origin_zyx", (0, 0, 0))
+        tgt_origin_zyx = tgt_meta.get("crop_origin_zyx", (0, 0, 0))
+        src_step = max(1, int(src_meta.get("downsample_zyx", 1)))
+        tgt_step = max(1, int(tgt_meta.get("downsample_zyx", 1)))
+
+        src_voxel_base = self._scan_base_voxel_size_mm(self.source_scan)
+        tgt_voxel_base = self._scan_base_voxel_size_mm(self.target_scan)
+        src_spacing = float(src_voxel_base) * float(src_step)
+        tgt_spacing = float(tgt_voxel_base) * float(tgt_step)
+
+        src_origin_xyz = np.array(
+            [float(src_origin_zyx[2]), float(src_origin_zyx[1]), float(src_origin_zyx[0])],
+            dtype=float,
+        ) * src_spacing
+        tgt_origin_xyz = np.array(
+            [float(tgt_origin_zyx[2]), float(tgt_origin_zyx[1]), float(tgt_origin_zyx[0])],
+            dtype=float,
+        ) * tgt_spacing
+
+        src_nz = np.argwhere(src_xyz > 0)
+        if src_nz.shape[0] == 0:
+            return None, {"reason": "source preview has no nonzero voxels"}
+
+        max_voxels_to_project = 3_500_000
+        if src_nz.shape[0] > max_voxels_to_project:
+            rng = np.random.default_rng(7)
+            keep = rng.choice(src_nz.shape[0], size=max_voxels_to_project, replace=False)
+            src_nz = src_nz[keep]
+
+        src_vals = src_xyz[src_nz[:, 0], src_nz[:, 1], src_nz[:, 2]]
+        src_world = src_origin_xyz + src_nz.astype(float) * src_spacing
+
+        transform = np.asarray(self.icp_result.transformation, dtype=float)
+        if transform.shape != (4, 4) or not np.isfinite(transform).all():
+            return None, {"reason": "invalid ICP transform"}
+
+        transformed = src_world @ transform[:3, :3].T + transform[:3, 3]
+        tgt_idx = np.rint((transformed - tgt_origin_xyz) / max(tgt_spacing, 1e-12)).astype(np.int64)
+
+        shape_xyz = np.array(tgt_xyz.shape, dtype=np.int64)
+        valid = np.logical_and.reduce([
+            tgt_idx[:, 0] >= 0,
+            tgt_idx[:, 1] >= 0,
+            tgt_idx[:, 2] >= 0,
+            tgt_idx[:, 0] < shape_xyz[0],
+            tgt_idx[:, 1] < shape_xyz[1],
+            tgt_idx[:, 2] < shape_xyz[2],
+        ])
+        if not np.any(valid):
+            return None, {"reason": "no transformed source voxels overlap target volume"}
+
+        tgt_idx = tgt_idx[valid]
+        src_vals = src_vals[valid]
+
+        fused_xyz = np.array(tgt_xyz, copy=True)
+        flat = fused_xyz.reshape(-1)
+        flat_idx = np.ravel_multi_index(
+            (tgt_idx[:, 0], tgt_idx[:, 1], tgt_idx[:, 2]),
+            dims=fused_xyz.shape,
+            mode="clip",
+        )
+        np.maximum.at(flat, flat_idx, src_vals)
+
+        fused_zyx = np.transpose(fused_xyz, (2, 1, 0))
+
+        gui_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_root = os.path.abspath(os.path.join(gui_dir, "..", ".."))
+        output_dir = os.path.join(repo_root, "generated", "registration_fusions")
+        os.makedirs(output_dir, exist_ok=True)
+
+        scan_token = (self.result_scan_id or "result").replace("-", "")[:12]
+        output_path = os.path.join(output_dir, f"fused_overlay_{scan_token}.npy")
+        np.save(output_path, fused_zyx.astype(np.uint8, copy=False), allow_pickle=False)
+
+        volume_source = VolumeSource(
+            path=output_path,
+            source_type="npy",
+            voxel_size_mm=float(tgt_voxel_base),
+            crop_zyx=None,
+            default_downsample_zyx=max(1, int(np.ceil(max(fused_zyx.shape) / 320.0))),
+        )
+        return volume_source, {
+            "shape_zyx": tuple(int(v) for v in fused_zyx.shape),
+            "voxel_size": float(tgt_voxel_base),
+            "path": output_path,
+            "points": int(src_nz.shape[0]),
+            "fusion_method": "registered volume overlay",
+        }
+
+    def _build_fused_pointcloud_volume_source(self):
+        if getattr(self, "icp_result", None) is None:
+            return None, {"reason": "missing ICP transform"}
+        if self.pcd1 is None or self.pcd2 is None:
+            return None, {"reason": "missing source/target clouds"}
+
+        src = copy.deepcopy(self.pcd1)
+        src.transform(self.icp_result.transformation)
+
+        src_pts = np.asarray(src.points, dtype=float)
+        tgt_pts = np.asarray(self.pcd2.points, dtype=float)
+        if src_pts.ndim != 2 or tgt_pts.ndim != 2 or src_pts.shape[1] != 3 or tgt_pts.shape[1] != 3:
+            return None, {"reason": "invalid point cloud shape"}
+
+        points = np.vstack([src_pts, tgt_pts])
+        finite_mask = np.isfinite(points).all(axis=1)
+        points = points[finite_mask]
+        if points.shape[0] < 8:
+            return None, {"reason": "insufficient finite points"}
+
+        max_points = 400000
+        if points.shape[0] > max_points:
+            rng = np.random.default_rng(42)
+            keep = rng.choice(points.shape[0], size=max_points, replace=False)
+            points = points[keep]
+
+        mins = np.min(points, axis=0)
+        maxs = np.max(points, axis=0)
+        extents = maxs - mins
+        diag = float(np.linalg.norm(extents))
+
+        voxel_size = self.registration_voxel_size_used
+        if voxel_size is None or not np.isfinite(voxel_size) or float(voxel_size) <= 0.0:
+            spacing_candidates = [
+                self._effective_spacing_mm(self.source_scan),
+                self._effective_spacing_mm(self.target_scan),
+            ]
+            spacing_candidates = [float(v) for v in spacing_candidates if v is not None and np.isfinite(v) and v > 0]
+            if spacing_candidates:
+                voxel_size = min(spacing_candidates)
+            elif diag > 0.0 and np.isfinite(diag):
+                voxel_size = diag / 220.0
+            else:
+                voxel_size = 1.0
+
+        voxel_size = max(float(voxel_size), 1e-6)
+        pad = 0.5 * voxel_size
+        mins = mins - pad
+        maxs = maxs + pad
+        extents = np.maximum(maxs - mins, voxel_size)
+
+        max_voxels = 18_000_000
+        for _ in range(12):
+            dims_xyz = np.ceil(extents / voxel_size).astype(np.int64) + 1
+            dims_xyz = np.maximum(dims_xyz, 2)
+            total_voxels = int(np.prod(dims_xyz))
+            if total_voxels <= max_voxels:
+                break
+            grow = max(1.05, (total_voxels / float(max_voxels)) ** (1.0 / 3.0))
+            voxel_size *= grow
+        else:
+            return None, {"reason": "unable to bound fusion volume size"}
+
+        idx_xyz = np.floor((points - mins) / voxel_size).astype(np.int64)
+        idx_xyz = np.clip(idx_xyz, 0, dims_xyz - 1)
+
+        volume_zyx = np.zeros((int(dims_xyz[2]), int(dims_xyz[1]), int(dims_xyz[0])), dtype=np.uint16)
+        np.add.at(volume_zyx, (idx_xyz[:, 2], idx_xyz[:, 1], idx_xyz[:, 0]), 1)
+
+        if int(np.max(volume_zyx)) <= 0:
+            return None, {"reason": "empty fused occupancy"}
+
+        intensity = np.log1p(volume_zyx.astype(np.float32, copy=False))
+        peak = float(np.max(intensity))
+        if not np.isfinite(peak) or peak <= 0.0:
+            return None, {"reason": "invalid fused intensity"}
+        intensity *= 255.0 / peak
+        fused_zyx = intensity.astype(np.uint8, copy=False)
+
+        gui_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_root = os.path.abspath(os.path.join(gui_dir, "..", ".."))
+        output_dir = os.path.join(repo_root, "generated", "registration_fusions")
+        os.makedirs(output_dir, exist_ok=True)
+
+        scan_token = (self.result_scan_id or "result").replace("-", "")[:12]
+        output_path = os.path.join(output_dir, f"fused_registration_{scan_token}.npy")
+        np.save(output_path, fused_zyx, allow_pickle=False)
+
+        default_downsample = max(1, int(np.ceil(max(dims_xyz) / 320.0)))
+        volume_source = VolumeSource(
+            path=output_path,
+            source_type="npy",
+            voxel_size_mm=float(voxel_size),
+            crop_zyx=None,
+            default_downsample_zyx=default_downsample,
+        )
+        metadata = {
+            "shape_zyx": (int(dims_xyz[2]), int(dims_xyz[1]), int(dims_xyz[0])),
+            "voxel_size": float(voxel_size),
+            "path": output_path,
+            "points": int(points.shape[0]),
+            "fusion_method": "registered point cloud occupancy",
+        }
+        return volume_source, metadata
+
+    @staticmethod
+    def _scan_base_voxel_size_mm(scan):
+        if scan is None:
+            return 1.0
+
+        candidates = []
+        if getattr(scan, "voxel_size_mm", None) is not None:
+            candidates.append(scan.voxel_size_mm)
+        if getattr(scan, "volume_source", None) is not None and getattr(scan.volume_source, "voxel_size_mm", None) is not None:
+            candidates.append(scan.volume_source.voxel_size_mm)
+
+        for value in candidates:
+            try:
+                value = float(value)
+            except Exception:
+                continue
+            if np.isfinite(value) and value > 0.0:
+                return value
+
+        return 1.0
