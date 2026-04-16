@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../../../xrayrecon"
+		},
+		{
+			"path": "../../../Documents/Scan Lab/Software/THz-Exporter"
 		}
 	],
 	"settings": {}

@@ -11,7 +11,9 @@ from makeGeometry import (
     inspect_tiff_stack,
 )
 from GUI.dialogs.sam_import_dialog import SAMImportDialog
+from GUI.dialogs.thz_import_dialog import THzImportDialog
 from GUI.dialogs.xray_import_dialog import XRayImportDialog
+from Utils.thz_import import build_thz_fft_npy_volume
 
 
 class ImportController:
@@ -109,6 +111,13 @@ class ImportController:
         if dialog.exec():
             params = dialog.get_import_params()
             self.import_sam_data(params)
+
+    def open_thz_dialog(self):
+        dialog = THzImportDialog(self.main)
+
+        if dialog.exec():
+            params = dialog.get_import_params()
+            self.import_thz_data(params)
 
     def import_xray_data(self, params):
         mw = self.main

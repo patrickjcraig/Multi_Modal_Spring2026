@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from uuid import uuid4
 
 import numpy as np
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QAction, QGuiApplication
 from PySide6.QtWidgets import QAbstractSpinBox, QButtonGroup, QMainWindow, QMessageBox
 from ui_mainwindow import Ui_MainWindow
 from GUI.workspace_controller import WorkspaceController
@@ -43,6 +43,10 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.workspace_controller = WorkspaceController(self)
         self.registration = RegistrationController(self)
         self.importer = ImportController(self)
+
+        self.actionImport_THz = QAction("THz", self)
+        self.actionImport_THz.setObjectName("actionImport_THz")
+        self.menuImport_2.addAction(self.actionImport_THz)
 
         # The tab widget now lives in the .ui file; clear the placeholder page.
         self.scanTabs.clear()
@@ -91,6 +95,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
 
         self.actionImport_XRay.triggered.connect(self.importer.open_xray_dialog)
         self.actionImport_SAM.triggered.connect(self.importer.open_sam_dialog)
+        self.actionImport_THz.triggered.connect(self.importer.open_thz_dialog)
         self.toolButton_4.clicked.connect(self.mark_current_as_source)
         self.toolButton_5.clicked.connect(self.mark_current_as_target)
         self.scanTabs.currentChanged.connect(self._on_tab_changed)
@@ -120,9 +125,9 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.spinBox_voxel_size.setSingleStep(0.01)
         self.spinBox_ransac_dist.setRange(0.1, 10.0)
         self.spinBox_ransac_dist.setSingleStep(0.1)
-        self.spinBox_ransac_max_iter.setRange(1000, 10000000)
+        self.spinBox_ransac_max_iter.setRange(1000, 100000000)
         self.spinBox_ransac_max_iter.setSingleStep(50000)
-        self.spinBox_ransac_validation.setRange(100, 100000)
+        self.spinBox_ransac_validation.setRange(100, 1000000)
         self.spinBox_ransac_validation.setSingleStep(500)
 
         self._matrix_spinboxes = [

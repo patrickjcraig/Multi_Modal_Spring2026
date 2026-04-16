@@ -133,7 +133,9 @@ def _extract_subvolume_from_array(array_zyx, downsample_zyx, crop_zyx):
             x0 * downsample_zyx:x1 * downsample_zyx:downsample_zyx,
         ]
     )
-    return sub, (z0, z1, y0, y1, x0, x1)
+    # ``np.load(..., mmap_mode='r')`` returns read-only views; marching cubes
+    # needs a writable contiguous buffer.
+    return np.ascontiguousarray(sub.copy()), (z0, z1, y0, y1, x0, x1)
 
 
 def _validate_numeric_3d_array(shape, dtype, source_name):
