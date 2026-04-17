@@ -62,6 +62,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.scanTabs.setMovable(True)
         self._fit_to_screen()
         self._setup_tool_panels()
+        self._set_registration_navigation_visible(False)
 
         self.setup_connections() # wire signals to the controllers above
         self._sync_selection_ui()
@@ -114,9 +115,6 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.actionRegistration_3.triggered.connect(self.show_registration_tools)
         self.actionTransformation_2.triggered.connect(self.show_transformation_tools)
         self.actionSlice_Viewer.triggered.connect(self.toggle_slice_viewer)
-        self.combo_global_transform_model.currentIndexChanged.connect(
-            lambda _index: self.registration.apply_suggested_ransac_parameters(show_status=True)
-        )
         self.btn_matrix_identity.clicked.connect(self.reset_affine_matrix_to_identity)
         self.btn_matrix_load_current.clicked.connect(self.load_current_affine_matrix)
         self.btn_transform_apply_current.clicked.connect(self.apply_affine_to_current_scan)
@@ -354,6 +352,9 @@ class AppTest(QMainWindow, Ui_MainWindow):
         if make_current:
             self.scanTabs.setCurrentIndex(index)
 
+        if bool(is_result) and modality == "registration-result":
+            self._set_registration_navigation_visible(True)
+
         if self.slice_viewer_global_enabled:
             tab.enable_slice_viewer()
 
@@ -407,6 +408,12 @@ class AppTest(QMainWindow, Ui_MainWindow):
         if removed_scan_id == self.target_scan_id:
             self.target_scan_id = None
 
+        has_registration_results = any(
+            rec.is_result and rec.modality == "registration-result"
+            for rec in self.scans.values()
+        )
+        self._set_registration_navigation_visible(has_registration_results)
+
         self._sync_selection_ui()
 
     def clear_scan_tabs(self):
@@ -423,7 +430,6 @@ class AppTest(QMainWindow, Ui_MainWindow):
             return
         self.source_scan_id = record.scan_id
         self._sync_selection_ui()
-        self.registration.apply_suggested_ransac_parameters(source_scan=record, show_status=False)
         self.statusbar.showMessage(f"Source scan set to '{record.name}'.")
 
     def mark_current_as_target(self):
@@ -436,7 +442,6 @@ class AppTest(QMainWindow, Ui_MainWindow):
             return
         self.target_scan_id = record.scan_id
         self._sync_selection_ui()
-        self.registration.apply_suggested_ransac_parameters(target_scan=record, show_status=False)
         self.statusbar.showMessage(f"Target scan set to '{record.name}'.")
 
     def get_registration_pair(self):
@@ -480,6 +485,12 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.toolButton_5.setToolTip(f"Target scan: {target_name}")
         self.label_step_info.setText(f"Source: {source_name} | Target: {target_name}")
         self._update_transform_status()
+
+    def _set_registration_navigation_visible(self, visible: bool):
+        visible = bool(visible)
+        self.progressBar.setVisible(visible)
+        self.btn_prev_step.setVisible(visible)
+        self.btn_next_step.setVisible(visible)
 
     # functionality previously implemented here (registration steps, saving,
     # import helpers, etc.) has been moved into dedicated helper classes to keep

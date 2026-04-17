@@ -553,21 +553,10 @@ def get_mesh_from_ct_stack(
     """
 
     vol = _make_lazy_volume_zyx(folder_path, "tiff_stack")               # dask (Z,Y,X)
-    effective_downsample, guarded_crop = _guard_mesh_sampling(
-        shape_zyx=vol.shape,
-        downsample_zyx=downsample_zyx,
-        crop_zyx=crop_zyx,
-        max_mesh_voxels=max_mesh_voxels,
-    )
-    if effective_downsample != int(downsample_zyx):
-        print(
-            f"Mesh guard: requested downsample {downsample_zyx}, "
-            f"using {effective_downsample} to stay within {int(max_mesh_voxels):,} voxels"
-        )
-
+    effective_downsample = max(1, int(downsample_zyx))
     vol_ds = vol[::effective_downsample, ::effective_downsample, ::effective_downsample]
 
-    z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, guarded_crop)
+    z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, crop_zyx)
     sub = vol_ds[z0:z1, y0:y1, x0:x1].compute()            # numpy array (small)
 
     return _mesh_from_subvolume_zyx(
@@ -588,21 +577,10 @@ def get_mesh_from_png_stack(
     max_mesh_voxels: int = 20_000_000,
 ):
     vol = _make_lazy_volume_zyx(folder_path, "png_stack")
-    effective_downsample, guarded_crop = _guard_mesh_sampling(
-        shape_zyx=vol.shape,
-        downsample_zyx=downsample_zyx,
-        crop_zyx=crop_zyx,
-        max_mesh_voxels=max_mesh_voxels,
-    )
-    if effective_downsample != int(downsample_zyx):
-        print(
-            f"Mesh guard: requested downsample {downsample_zyx}, "
-            f"using {effective_downsample} to stay within {int(max_mesh_voxels):,} voxels"
-        )
-
+    effective_downsample = max(1, int(downsample_zyx))
     vol_ds = vol[::effective_downsample, ::effective_downsample, ::effective_downsample]
 
-    z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, guarded_crop)
+    z0, z1, y0, y1, x0, x1 = _center_crop_bounds(vol_ds.shape, crop_zyx)
     sub = vol_ds[z0:z1, y0:y1, x0:x1].compute()
     level = _resolve_surface_level(sub, level, default_mode="midpoint")
 
@@ -636,19 +614,8 @@ def get_mesh_from_array_volume(
         raise ValueError(f"Unsupported file type '{file_type}'")
 
     try:
-        effective_downsample, guarded_crop = _guard_mesh_sampling(
-            shape_zyx=array_zyx.shape,
-            downsample_zyx=downsample_zyx,
-            crop_zyx=crop_zyx,
-            max_mesh_voxels=max_mesh_voxels,
-        )
-        if effective_downsample != int(downsample_zyx):
-            print(
-                f"Mesh guard: requested downsample {downsample_zyx}, "
-                f"using {effective_downsample} to stay within {int(max_mesh_voxels):,} voxels"
-            )
-
-        sub_zyx, bounds_zyx = _extract_subvolume_from_array(array_zyx, effective_downsample, guarded_crop)
+        effective_downsample = max(1, int(downsample_zyx))
+        sub_zyx, bounds_zyx = _extract_subvolume_from_array(array_zyx, effective_downsample, crop_zyx)
         return _mesh_from_subvolume_zyx(
             sub_zyx=sub_zyx,
             voxel_size_mm=voxel_size_mm,
