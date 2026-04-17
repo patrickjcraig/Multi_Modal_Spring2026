@@ -105,9 +105,7 @@ class RegistrationController(QObject):
             f"Running {self._describe_global_stage()} -> {self.local_stage_name}: "
             f"{self.source_scan.name} -> {self.target_scan.name}{diag_note}"
         )
-
-        if self.scale_diagnostics is not None:
-            print("Registration scale diagnostics:", self.scale_diagnostics)
+        print(f"Registration starting: {self.source_scan.name} -> {self.target_scan.name}")
 
         self._display_source_mesh_base = self._prepare_display_mesh(
             self.source_scan.mesh if self.source_scan is not None else None
@@ -377,6 +375,7 @@ class RegistrationController(QObject):
         else:
             mw.statusbar.showMessage('Registration complete!')
 
+        print("Registration done")
         mw.toolButton.setEnabled(True)
 
     def _update_results_display(self):

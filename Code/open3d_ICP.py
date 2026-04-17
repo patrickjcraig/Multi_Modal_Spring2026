@@ -414,14 +414,6 @@ def run_RANSAC(
     if best_result is None:
         raise RuntimeError("Global registration failed to produce a result.")
 
-    print(
-        "Global registration selected:",
-        best_name,
-        f"fitness={float(best_result.fitness):.6f}",
-        f"rmse={float(best_result.inlier_rmse):.6f}",
-        f"corr={len(best_result.correspondence_set)}",
-        f"partial_overlap_hint={partial_overlap_hint}",
-    )
     return best_result
 
 
@@ -541,20 +533,6 @@ def run_full_registration(
         pcd2_down, pcd2_fpfh, voxel2 = preprocess_point_cloud(pcd2, voxel_size)
         registration_voxel_size = max(float(voxel_size), float(voxel1), float(voxel2))
 
-    if spacing_pre_scale.get("enabled"):
-        print(
-            "Spacing pre-scale:",
-            f"applied={bool(spacing_pre_scale.get('applied'))}",
-            f"scale={float(spacing_pre_scale.get('scale', 1.0)):.6f}",
-            f"detail={spacing_pre_scale.get('detail', '')}",
-        )
-
-    if registration_voxel_size > float(voxel_size):
-        print(
-            f"Registration guard: requested voxel {float(voxel_size):.6g}, "
-            f"using {float(registration_voxel_size):.6g} to bound feature cloud size"
-        )
-
     # stage 0: raw clouds
     if step_callback is not None:
         step_callback(
@@ -614,9 +592,7 @@ def run_full_registration(
         icp_scale = _extract_uniform_scale(result_icp.transformation)
         transform_finite = _transform_is_finite(result_icp.transformation)
         scale_plausible = np.isfinite(icp_scale) and 0.85 <= float(icp_scale) <= 1.15
-        print(f"Local ICP similarity scale: {icp_scale:.6f}")
         if (not transform_finite) or (not scale_plausible):
-            print("Local ICP similarity became unstable; rerunning local stage as rigid fallback.")
             result_icp = run_ICP(
                 pcd1,
                 pcd2,

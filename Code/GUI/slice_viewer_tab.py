@@ -4,6 +4,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
+from Utils.image_enhancement import apply_gamma_contrast_uint8
+
 
 class SliceViewerTab:
     """Encapsulates 2D slice controls and rendering for a volume preview."""
@@ -15,6 +17,8 @@ class SliceViewerTab:
         self._volume_xyz = None
         self._slice_axis = 2
         self._current_slice_index = 0
+        self._gamma = 1.0
+        self._contrast = 1.0
 
         self.controls_frame = QFrame(parent)
         controls_layout = QHBoxLayout(self.controls_frame)
@@ -44,6 +48,30 @@ class SliceViewerTab:
 
         self.slice_index_label = QLabel("0 / 0")
         controls_layout.addWidget(self.slice_index_label)
+
+        self.gamma_label = QLabel("Gamma 1.00")
+        controls_layout.addWidget(self.gamma_label)
+
+        self.gamma_slider = QSlider(Qt.Horizontal)
+        self.gamma_slider.setRange(20, 300)  # maps to [0.20, 3.00]
+        self.gamma_slider.setValue(100)
+        self.gamma_slider.setSingleStep(1)
+        self.gamma_slider.setPageStep(10)
+        self.gamma_slider.setMinimumWidth(120)
+        self.gamma_slider.valueChanged.connect(self._on_gamma_changed)
+        controls_layout.addWidget(self.gamma_slider)
+
+        self.contrast_label = QLabel("Contrast 1.00")
+        controls_layout.addWidget(self.contrast_label)
+
+        self.contrast_slider = QSlider(Qt.Horizontal)
+        self.contrast_slider.setRange(50, 300)  # maps to [0.50, 3.00]
+        self.contrast_slider.setValue(100)
+        self.contrast_slider.setSingleStep(1)
+        self.contrast_slider.setPageStep(10)
+        self.contrast_slider.setMinimumWidth(120)
+        self.contrast_slider.valueChanged.connect(self._on_contrast_changed)
+        controls_layout.addWidget(self.contrast_slider)
 
         self.page = QWidget(parent)
         page_layout = QVBoxLayout(self.page)
@@ -125,6 +153,12 @@ class SliceViewerTab:
     def get_slice_axis(self):
         return int(self._slice_axis)
 
+    def get_enhancement_settings(self):
+        return {
+            "gamma": float(self._gamma),
+            "contrast": float(self._contrast),
+        }
+
     def _setup_slice_controls_for_volume(self, shape_xyz):
         depth = max(1, int(shape_xyz[self._slice_axis]))
         max_index = depth - 1
@@ -164,7 +198,18 @@ class SliceViewerTab:
         else:
             # XY plane sampled at Z
             plane = np.asarray(volume_xyz[:, :, int(slice_index)], dtype=np.uint8)
-        return np.ascontiguousarray(np.flipud(plane.T))
+        raw = np.ascontiguousarray(np.flipud(plane.T))
+        return apply_gamma_contrast_uint8(raw, gamma=self._gamma, contrast=self._contrast)
+
+    def _on_gamma_changed(self, value):
+        self._gamma = max(float(value) / 100.0, 0.01)
+        self.gamma_label.setText(f"Gamma {self._gamma:.2f}")
+        self._render_current_slice()
+
+    def _on_contrast_changed(self, value):
+        self._contrast = max(float(value) / 100.0, 0.01)
+        self.contrast_label.setText(f"Contrast {self._contrast:.2f}")
+        self._render_current_slice()
 
     def _render_current_slice(self):
         if not self._active or self._volume_xyz is None:
@@ -197,7 +242,7 @@ class SliceViewerTab:
         total = int(self.slice_slider.maximum()) + 1
         self.slice_index_label.setText(f"{current} / {total}")
         self.slice_image_meta_label.setText(
-            f"Slice {self._axis_name()} index: {self._current_slice_index} | Use Up/Down arrows for fine stepping"
+            f"Slice {self._axis_name()} index: {self._current_slice_index} | Gamma {self._gamma:.2f} | Contrast {self._contrast:.2f}"
         )
 
     def _emit_slice_changed(self):

@@ -5,6 +5,8 @@ import numpy as np
 import tifffile as tiff
 from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
+from Utils.image_enhancement import apply_gamma_contrast_uint8
+
 
 class ExportController:
     """Handle export actions for generated registration reconstructions."""
@@ -123,6 +125,9 @@ class ExportController:
             return
 
         export_zyx = np.ascontiguousarray(volume_zyx[::downsample, ::downsample, ::downsample])
+
+        gamma, contrast = self._current_slice_enhancement(record)
+        export_zyx = apply_gamma_contrast_uint8(export_zyx, gamma=gamma, contrast=contrast)
         export_zyx = self._prepare_tiff_dtype(export_zyx)
 
         z_slices = int(export_zyx.shape[0])
@@ -138,6 +143,8 @@ class ExportController:
             handle.write(f"Original shape ZYX: {tuple(int(v) for v in volume_zyx.shape)}\n")
             handle.write(f"Export shape ZYX: {tuple(int(v) for v in export_zyx.shape)}\n")
             handle.write(f"Downsample factor: {downsample}\n")
+            handle.write(f"Gamma: {gamma:.3f}\n")
+            handle.write(f"Contrast: {contrast:.3f}\n")
             handle.write(f"Data type: {export_zyx.dtype}\n")
 
         self.main.statusbar.showMessage(
@@ -148,6 +155,31 @@ class ExportController:
             "Export Complete",
             f"Exported {z_slices} TIFF slices to:\n{output_dir}",
         )
+
+    @staticmethod
+    def _current_slice_enhancement(record):
+        gamma = 1.0
+        contrast = 1.0
+        tab = getattr(record, "tab", None)
+        if tab is None:
+            return gamma, contrast
+
+        slice_viewer = getattr(tab, "slice_viewer", None)
+        if slice_viewer is None:
+            return gamma, contrast
+
+        getter = getattr(slice_viewer, "get_enhancement_settings", None)
+        if getter is None:
+            return gamma, contrast
+
+        try:
+            values = getter()
+            gamma = float(values.get("gamma", gamma))
+            contrast = float(values.get("contrast", contrast))
+        except Exception:
+            gamma = 1.0
+            contrast = 1.0
+        return gamma, contrast
 
     @staticmethod
     def _sanitize_folder_name(name):

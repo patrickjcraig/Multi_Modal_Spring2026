@@ -106,7 +106,7 @@ class ScanViewerTab(QWidget):
         page_3d_layout.addWidget(self.viewer, 1)
 
         self.slice_viewer = SliceViewerTab(self.viewer_tabs, on_slice_changed=self._on_slice_changed)
-        page_3d_layout.addWidget(self.slice_viewer.controls_frame)
+        self.slice_viewer.page.layout().insertWidget(0, self.slice_viewer.controls_frame)
 
         self.viewer_tabs.addTab(self.page_3d_view, "3D View")
 
