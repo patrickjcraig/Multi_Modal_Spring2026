@@ -5,6 +5,7 @@ import numpy as np
 import tifffile as tiff
 from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
+from makeGeometry import VolumeSource, load_ct_volume_preview
 from Utils.image_enhancement import apply_gamma_contrast_uint8
 
 
@@ -13,6 +14,8 @@ class ExportController:
 
     def __init__(self, main_window):
         self.main = main_window
+        # Keep export loads bounded to avoid OOM crashes on large volumes.
+        self.max_export_preview_voxels = 80_000_000
 
     def export_current_registration_tiff_stack(self):
         record = self.main.current_scan()
@@ -39,17 +42,8 @@ class ExportController:
             self.main.statusbar.showMessage("No reconstruction volume is available for export.")
             return
 
-        if getattr(volume_source, "source_type", "") != "npy":
-            QMessageBox.warning(
-                self.main,
-                "Export",
-                "Only generated NPY reconstruction volumes are currently supported for TIFF export.",
-            )
-            self.main.statusbar.showMessage("Export skipped: unsupported reconstruction volume type.")
-            return
-
-        npy_path = getattr(volume_source, "path", "")
-        if not npy_path or not os.path.isfile(npy_path):
+        predicted_path = getattr(volume_source, "path", "")
+        if not predicted_path or not os.path.exists(predicted_path):
             QMessageBox.warning(
                 self.main,
                 "Export",
@@ -58,10 +52,21 @@ class ExportController:
             self.main.statusbar.showMessage("Export failed: reconstruction file is missing.")
             return
 
+        source_volume_source, source_preview_downsample = self._resolve_role_export_spec(record, role="source")
+        target_volume_source, target_preview_downsample = self._resolve_role_export_spec(record, role="target")
+        if source_volume_source is None or target_volume_source is None:
+            QMessageBox.warning(
+                self.main,
+                "Export",
+                "Source/Target reconstruction references are missing on this registration result.",
+            )
+            self.main.statusbar.showMessage("Export failed: source/target reconstruction is unavailable.")
+            return
+
         base_dir = QFileDialog.getExistingDirectory(
             self.main,
             "Select Export Directory",
-            os.path.dirname(npy_path),
+            os.path.dirname(predicted_path),
         )
         if not base_dir:
             return
@@ -84,7 +89,7 @@ class ExportController:
         downsample_text, ok = QInputDialog.getItem(
             self.main,
             "Downsampling",
-            "Select isotropic downsampling factor (applied to Z, Y, X):",
+            "Select isotropic downsampling factor for Predicted_Fusion (Source/Target use slice-view preview scale):",
             ["1", "2", "4", "8", "16"],
             current=1,
             editable=False,
@@ -110,51 +115,161 @@ class ExportController:
         else:
             os.makedirs(output_dir, exist_ok=True)
 
-        try:
-            volume_zyx = np.load(npy_path, allow_pickle=False)
-        except Exception as exc:
-            QMessageBox.critical(self.main, "Export Error", f"Failed to load reconstruction: {exc}")
-            return
-
-        if volume_zyx.ndim != 3:
-            QMessageBox.critical(
-                self.main,
-                "Export Error",
-                f"Expected a 3D reconstruction array, got shape {tuple(int(v) for v in volume_zyx.shape)}.",
-            )
-            return
-
-        export_zyx = np.ascontiguousarray(volume_zyx[::downsample, ::downsample, ::downsample])
-
         gamma, contrast = self._current_slice_enhancement(record)
-        export_zyx = apply_gamma_contrast_uint8(export_zyx, gamma=gamma, contrast=contrast)
-        export_zyx = self._prepare_tiff_dtype(export_zyx)
 
-        z_slices = int(export_zyx.shape[0])
-        for z in range(z_slices):
-            out_path = os.path.join(output_dir, f"slice_{z:05d}.tif")
-            tiff.imwrite(out_path, export_zyx[z], compression="zlib")
+        roles = [
+            ("Source", source_volume_source, int(max(1, source_preview_downsample))),
+            ("Target", target_volume_source, int(max(1, target_preview_downsample))),
+            ("Predicted_Fusion", volume_source, int(max(1, downsample))),
+        ]
+        role_exports = []
+        for role_name, role_volume_source, role_downsample in roles:
+            try:
+                volume_zyx, source_shape_zyx = self._load_volume_zyx_for_export(
+                    role_volume_source,
+                    downsample=role_downsample,
+                )
+                volume_zyx = apply_gamma_contrast_uint8(volume_zyx, gamma=gamma, contrast=contrast)
+                volume_zyx = self._prepare_tiff_dtype(volume_zyx)
+
+                role_dir = os.path.join(output_dir, role_name)
+                os.makedirs(role_dir, exist_ok=True)
+                z_slices = self._write_tiff_stack(role_dir, volume_zyx)
+                role_exports.append(
+                    {
+                        "name": role_name,
+                        "path": role_dir,
+                        "source_path": getattr(role_volume_source, "path", ""),
+                        "source_shape_zyx": source_shape_zyx,
+                        "preview_downsample": int(role_downsample),
+                        "export_shape_zyx": tuple(int(v) for v in volume_zyx.shape),
+                        "z_slices": z_slices,
+                        "dtype": str(volume_zyx.dtype),
+                    }
+                )
+            except Exception as exc:
+                QMessageBox.critical(
+                    self.main,
+                    "Export Error",
+                    f"Failed while exporting '{role_name}' stack:\n{exc}",
+                )
+                self.main.statusbar.showMessage(f"Export failed while processing '{role_name}'.")
+                return
 
         info_path = os.path.join(output_dir, "export_info.txt")
         with open(info_path, "w", encoding="utf-8") as handle:
-            handle.write("Registration reconstruction TIFF export\n")
+            handle.write("Registration reconstruction TIFF export (multi-folder)\n")
             handle.write(f"Exported: {datetime.now().isoformat(timespec='seconds')}\n")
-            handle.write(f"Source volume: {npy_path}\n")
-            handle.write(f"Original shape ZYX: {tuple(int(v) for v in volume_zyx.shape)}\n")
-            handle.write(f"Export shape ZYX: {tuple(int(v) for v in export_zyx.shape)}\n")
-            handle.write(f"Downsample factor: {downsample}\n")
+            handle.write(f"Predicted_Fusion downsample factor: {downsample}\n")
             handle.write(f"Gamma: {gamma:.3f}\n")
             handle.write(f"Contrast: {contrast:.3f}\n")
-            handle.write(f"Data type: {export_zyx.dtype}\n")
+            handle.write("\n")
+            for role in role_exports:
+                handle.write(f"[{role['name']}]\n")
+                handle.write(f"Source volume: {role['source_path']}\n")
+                handle.write(f"Source shape ZYX: {role['source_shape_zyx']}\n")
+                handle.write(f"Preview downsample ZYX: {role['preview_downsample']}\n")
+                handle.write(f"Export shape ZYX: {role['export_shape_zyx']}\n")
+                handle.write(f"Data type: {role['dtype']}\n")
+                handle.write(f"TIFF slices: {role['z_slices']}\n")
+                handle.write(f"Folder: {role['path']}\n")
+                handle.write("\n")
+
+        total_slices = sum(int(role["z_slices"]) for role in role_exports)
 
         self.main.statusbar.showMessage(
-            f"Exported {z_slices} TIFF slices to '{output_dir}' (downsample {downsample}x)."
+            f"Exported Source/Target/Predicted_Fusion TIFF stacks to '{output_dir}' (downsample {downsample}x)."
         )
         QMessageBox.information(
             self.main,
             "Export Complete",
-            f"Exported {z_slices} TIFF slices to:\n{output_dir}",
+            f"Export complete.\n\n"
+            f"Source: {role_exports[0]['z_slices']} slices\n"
+            f"Target: {role_exports[1]['z_slices']} slices\n"
+            f"Predicted_Fusion: {role_exports[2]['z_slices']} slices\n"
+            f"Total slices: {total_slices}\n\n"
+            f"Root folder:\n{output_dir}",
         )
+
+    def _resolve_role_export_spec(self, result_record, role):
+        metadata = getattr(result_record, "metadata", {}) or {}
+        key = f"{role}_volume_source"
+        from_metadata = self._deserialize_volume_source(metadata.get(key))
+        role_scan = None
+
+        scan_id_key = f"{role}_scan_id"
+        scan_id = metadata.get(scan_id_key)
+        if scan_id:
+            role_scan = self.main.scans.get(scan_id)
+
+        if from_metadata is not None:
+            downsample = self._slice_preview_downsample_for_scan(role_scan, from_metadata)
+            return from_metadata, downsample
+
+        if role_scan is not None:
+            volume_source = getattr(role_scan, "volume_source", None)
+            downsample = self._slice_preview_downsample_for_scan(role_scan, volume_source)
+            return volume_source, downsample
+
+        return None, 1
+
+    @staticmethod
+    def _slice_preview_downsample_for_scan(scan, fallback_volume_source):
+        if scan is not None:
+            tab = getattr(scan, "tab", None)
+            if tab is not None:
+                spin = getattr(tab, "spin_volume_downsample", None)
+                if spin is not None:
+                    try:
+                        return max(1, int(spin.value()))
+                    except Exception:
+                        pass
+
+            volume_source = getattr(scan, "volume_source", None)
+            if volume_source is not None:
+                return max(1, int(getattr(volume_source, "default_downsample_zyx", 1)))
+
+        if fallback_volume_source is not None:
+            return max(1, int(getattr(fallback_volume_source, "default_downsample_zyx", 1)))
+
+        return 1
+
+    @staticmethod
+    def _deserialize_volume_source(data):
+        if not isinstance(data, dict):
+            return None
+
+        path = str(data.get("path", "") or "")
+        source_type = str(data.get("source_type", "") or "")
+        if not path or not source_type:
+            return None
+
+        return VolumeSource(
+            path=path,
+            source_type=source_type,
+            voxel_size_mm=data.get("voxel_size_mm", None),
+            crop_zyx=data.get("crop_zyx", None),
+            default_downsample_zyx=max(1, int(data.get("default_downsample_zyx", 1) or 1)),
+            dataset_path=data.get("dataset_path", None),
+        )
+
+    @staticmethod
+    def _write_tiff_stack(output_dir, volume_zyx):
+        z_slices = int(volume_zyx.shape[0])
+        for z in range(z_slices):
+            out_path = os.path.join(output_dir, f"slice_{z:05d}.tif")
+            tiff.imwrite(out_path, volume_zyx[z], compression="zlib")
+        return z_slices
+
+    def _load_volume_zyx_for_export(self, volume_source, downsample):
+        preview_xyz, metadata = load_ct_volume_preview(
+            volume_source=volume_source,
+            downsample_zyx=max(1, int(downsample)),
+            crop_zyx=getattr(volume_source, "crop_zyx", None),
+            max_preview_voxels=int(self.max_export_preview_voxels),
+        )
+        preview_zyx = np.ascontiguousarray(np.transpose(preview_xyz, (2, 1, 0)))
+        return preview_zyx, tuple(int(v) for v in metadata.get("shape_zyx", preview_zyx.shape))
 
     @staticmethod
     def _current_slice_enhancement(record):

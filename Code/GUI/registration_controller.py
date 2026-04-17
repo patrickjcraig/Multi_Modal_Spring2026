@@ -133,6 +133,17 @@ class RegistrationController(QObject):
             },
         )
 
+        result_record = mw.scans.get(self.result_scan_id)
+        if result_record is not None:
+            result_record.metadata["source_scan_id"] = self.source_scan.scan_id
+            result_record.metadata["target_scan_id"] = self.target_scan.scan_id
+            result_record.metadata["source_volume_source"] = self._serialize_volume_source(
+                getattr(self.source_scan, "volume_source", None)
+            )
+            result_record.metadata["target_volume_source"] = self._serialize_volume_source(
+                getattr(self.target_scan, "volume_source", None)
+            )
+
         self.icp_thread = ICPWorkerThread(
             voxel_size=voxel_size,
             ransac_dist_mult=ransac_dist_mult,
@@ -906,3 +917,17 @@ class RegistrationController(QObject):
                 return value
 
         return 1.0
+
+    @staticmethod
+    def _serialize_volume_source(volume_source):
+        if volume_source is None:
+            return None
+
+        return {
+            "path": getattr(volume_source, "path", ""),
+            "source_type": getattr(volume_source, "source_type", ""),
+            "voxel_size_mm": getattr(volume_source, "voxel_size_mm", None),
+            "crop_zyx": getattr(volume_source, "crop_zyx", None),
+            "default_downsample_zyx": getattr(volume_source, "default_downsample_zyx", 1),
+            "dataset_path": getattr(volume_source, "dataset_path", None),
+        }

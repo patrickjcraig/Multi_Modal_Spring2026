@@ -1,4 +1,5 @@
 import copy
+import os
 from dataclasses import dataclass, field
 from uuid import uuid4
 
@@ -35,6 +36,12 @@ class AppTest(QMainWindow, Ui_MainWindow):
         super().__init__()
         self.setupUi(self)
         self.setWindowTitle('MultiModal Scanner (Name WIP)')
+
+        code_dir = os.path.dirname(os.path.abspath(__file__))
+        self.repo_root = os.path.abspath(os.path.join(code_dir, "..", ".."))
+        self._managed_generated_dirs = (
+            os.path.join(self.repo_root, "generated", "registration_fusions"),
+        )
 
         self.scans = {}
         self.source_scan_id = None
@@ -394,9 +401,11 @@ class AppTest(QMainWindow, Ui_MainWindow):
             return
 
         removed_scan_id = None
+        cleanup_candidates = []
         for scan_id, record in list(self.scans.items()):
             if record.tab is tab:
                 removed_scan_id = scan_id
+                cleanup_candidates = self._generated_npy_paths_from_record(record)
                 del self.scans[scan_id]
                 break
 
@@ -414,7 +423,94 @@ class AppTest(QMainWindow, Ui_MainWindow):
         )
         self._set_registration_navigation_visible(has_registration_results)
 
+        if cleanup_candidates:
+            self._cleanup_generated_npy_files(cleanup_candidates)
+
         self._sync_selection_ui()
+
+    def closeEvent(self, event):
+        self._purge_managed_generated_npy()
+        super().closeEvent(event)
+
+    def _generated_npy_paths_from_record(self, record):
+        paths = []
+        volume_source = getattr(record, "volume_source", None)
+        if volume_source is not None:
+            candidate = getattr(volume_source, "path", None)
+            if self._is_managed_generated_npy(candidate):
+                paths.append(os.path.abspath(candidate))
+
+        metadata = getattr(record, "metadata", {}) or {}
+        for key in ("source_volume_source", "target_volume_source"):
+            serialized = metadata.get(key)
+            if not isinstance(serialized, dict):
+                continue
+            candidate = serialized.get("path")
+            source_type = str(serialized.get("source_type", "") or "")
+            if source_type != "npy":
+                continue
+            if self._is_managed_generated_npy(candidate):
+                paths.append(os.path.abspath(candidate))
+
+        deduped = []
+        seen = set()
+        for path in paths:
+            if path in seen:
+                continue
+            seen.add(path)
+            deduped.append(path)
+        return deduped
+
+    def _path_referenced_by_open_tabs(self, npy_path):
+        target = os.path.abspath(npy_path)
+        for record in self.scans.values():
+            for candidate in self._generated_npy_paths_from_record(record):
+                if os.path.abspath(candidate) == target:
+                    return True
+        return False
+
+    def _cleanup_generated_npy_files(self, paths):
+        for candidate in paths:
+            if not self._is_managed_generated_npy(candidate):
+                continue
+            full = os.path.abspath(candidate)
+            if self._path_referenced_by_open_tabs(full):
+                continue
+            try:
+                if os.path.isfile(full):
+                    os.remove(full)
+            except OSError:
+                continue
+
+    def _purge_managed_generated_npy(self):
+        for directory in self._managed_generated_dirs:
+            if not os.path.isdir(directory):
+                continue
+            for entry in os.listdir(directory):
+                if entry.lower().endswith(".npy"):
+                    candidate = os.path.join(directory, entry)
+                    try:
+                        if os.path.isfile(candidate):
+                            os.remove(candidate)
+                    except OSError:
+                        continue
+
+    def _is_managed_generated_npy(self, path):
+        if not path:
+            return False
+
+        candidate = os.path.abspath(str(path))
+        if not candidate.lower().endswith(".npy"):
+            return False
+
+        for directory in self._managed_generated_dirs:
+            managed_dir = os.path.abspath(directory)
+            try:
+                if os.path.commonpath([candidate, managed_dir]) == managed_dir:
+                    return True
+            except ValueError:
+                continue
+        return False
 
     def clear_scan_tabs(self):
         while self.scanTabs.count():
