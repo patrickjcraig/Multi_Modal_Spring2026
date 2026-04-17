@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtCore import QThread, Qt, Signal, QTimer
 from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut
 
 from makeGeometry import load_ct_volume_preview
@@ -106,12 +106,14 @@ class ScanViewerTab(QWidget):
         page_3d_layout.addWidget(self.viewer, 1)
 
         self.slice_viewer = SliceViewerTab(self.viewer_tabs, on_slice_changed=self._on_slice_changed)
-        self.slice_viewer.page.layout().insertWidget(0, self.slice_viewer.controls_frame)
+        page_3d_layout.addWidget(self.slice_viewer.controls_frame)
+        self.slice_viewer.page.layout().insertWidget(0, self.slice_viewer.enhancement_controls_frame)
 
         self.viewer_tabs.addTab(self.page_3d_view, "3D View")
 
         self.viewer_tabs.addTab(self.slice_viewer.page, "2D Slice")
         self.viewer_tabs.setTabEnabled(1, False)
+        self.viewer_tabs.currentChanged.connect(self._on_viewer_tab_changed)
 
         self.btn_toggle_volume.clicked.connect(self.toggle_volume_view)
         self.btn_toggle_mesh.clicked.connect(self.toggle_pointcloud_mesh_view)
@@ -376,11 +378,22 @@ class ScanViewerTab(QWidget):
     def _on_slice_changed(self, _slice_index, _slice_count, _slice_axis):
         self._update_slice_indicator()
 
+    def _on_viewer_tab_changed(self, index):
+        # Re-render once the 2D page is actually visible so scaling uses
+        # the final on-screen widget size instead of hidden-tab size hints.
+        if int(index) == 1:
+            QTimer.singleShot(0, self.slice_viewer.refresh)
+
     def _update_slice_indicator(self):
         if not self._slice_viewer_enabled:
             return
         if self._volume_xyz is None:
             return
+        if hasattr(self.slice_viewer, "get_all_slice_positions") and hasattr(self.viewer, "set_slice_indicators"):
+            self.viewer.set_slice_indicators(self.slice_viewer.get_all_slice_positions())
+            return
+
+        # Backward compatibility for older single-plane viewer API.
         self.viewer.set_slice_indicator(
             slice_index=self.slice_viewer.get_slice_index(),
             slice_count=self.slice_viewer.get_slice_count(),

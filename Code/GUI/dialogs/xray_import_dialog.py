@@ -40,7 +40,7 @@ class XRayImportDialog(QDialog, Ui_XRayDialog):
         self.spin_roi_z.setMinimum(1)
         self.spin_downsampling.setMinimum(1)
         self.spin_pcd_pts.setMinimum(1)
-        self.spin_pcd_pts.setValue(30000)
+        self.spin_pcd_pts.setValue(10000)
         self.spin_pcd_pts.setToolTip("Higher point counts capture small internal features better.")
         self.spin_marching_cubes.setMinimum(0)
         self.spin_marching_cubes.setValue(0)

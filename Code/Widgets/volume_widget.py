@@ -21,10 +21,12 @@ class VolumeRenderWidget(QWidget):
         self._volume_item = None
         self._grid_item = None
         self._axes_item = None
-        self._slice_indicator_item = None
+        self._slice_indicator_items = {}
         self._slice_indicator_visible = False
         self._volume_loaded = False
         self._volume_mode = False
+        self._slice_indicator_alpha_geometry = 0.60
+        self._slice_indicator_alpha_volume = 0.85
 
         self.point_clouds = {}
         self.meshes = {}
@@ -206,25 +208,30 @@ class VolumeRenderWidget(QWidget):
         if self._volume_item is not None:
             self._volume_item.setVisible(self._volume_mode and self._volume_loaded)
 
-        if self._slice_indicator_item is not None:
-            self._slice_indicator_item.setVisible(self._slice_indicator_visible)
+        for item in self._slice_indicator_items.values():
+            item.setVisible(self._slice_indicator_visible)
 
     def set_slice_indicator_visible(self, visible):
         self._slice_indicator_visible = bool(visible)
-        if self._slice_indicator_item is not None:
-            self._slice_indicator_item.setVisible(self._slice_indicator_visible)
+        for item in self._slice_indicator_items.values():
+            item.setVisible(self._slice_indicator_visible)
 
     def clear_slice_indicator(self):
-        if not self.is_available() or self._slice_indicator_item is None:
+        if not self.is_available() or not self._slice_indicator_items:
             self._slice_indicator_visible = False
             return
-        self._slice_indicator_item.setVisible(False)
+        for item in self._slice_indicator_items.values():
+            item.setVisible(False)
         self._slice_indicator_visible = False
 
     def set_slice_indicator(self, slice_index, slice_count, axis=2):
+        # Legacy single-plane API kept for compatibility.
+        self.set_slice_indicators({int(axis): (int(slice_index), int(slice_count))})
+
+    def set_slice_indicators(self, axis_positions):
         if not self.is_available() or gl is None:
             return
-        if int(slice_count) <= 0:
+        if not axis_positions:
             self.clear_slice_indicator()
             return
 
@@ -234,67 +241,99 @@ class VolumeRenderWidget(QWidget):
             return
 
         (minx, miny, minz), (maxx, maxy, maxz) = bounds
-        slice_count = max(1, int(slice_count))
-        slice_index = max(0, min(slice_count - 1, int(slice_index)))
-
-        axis = int(axis)
-        t = (float(slice_index) + 0.5) / float(slice_count)
-
-        if axis == 0:
-            # YZ plane at X
-            x = float(minx) + t * float(maxx - minx)
-            vertices = np.array(
-                [
-                    [x, miny, minz],
-                    [x, maxy, minz],
-                    [x, maxy, maxz],
-                    [x, miny, maxz],
-                ],
-                dtype=np.float32,
-            )
-        elif axis == 1:
-            # XZ plane at Y
-            y = float(miny) + t * float(maxy - miny)
-            vertices = np.array(
-                [
-                    [minx, y, minz],
-                    [maxx, y, minz],
-                    [maxx, y, maxz],
-                    [minx, y, maxz],
-                ],
-                dtype=np.float32,
-            )
-        else:
-            # XY plane at Z
-            z = float(minz) + t * float(maxz - minz)
-            vertices = np.array(
-                [
-                    [minx, miny, z],
-                    [maxx, miny, z],
-                    [maxx, maxy, z],
-                    [minx, maxy, z],
-                ],
-                dtype=np.float32,
-            )
-
         faces = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32)
+        alpha = self._slice_indicator_alpha_volume if self._volume_mode else self._slice_indicator_alpha_geometry
+        axis_colors = {
+            0: (1.0, 0.2, 0.2, alpha),
+            1: (0.2, 1.0, 0.2, alpha),
+            2: (0.2, 0.5, 1.0, alpha),
+        }
 
-        if self._slice_indicator_item is None:
-            mesh_data = gl.MeshData(vertexes=vertices, faces=faces)
-            self._slice_indicator_item = gl.GLMeshItem(
-                meshdata=mesh_data,
-                smooth=False,
-                drawFaces=True,
-                drawEdges=True,
-                color=(1.0, 1.0, 1.0, 0.20),
-                shader="shaded",
-            )
-            self._view.addItem(self._slice_indicator_item)
-        else:
-            self._slice_indicator_item.setMeshData(vertexes=vertices, faces=faces)
+        active_axes = set()
+        for axis, position in axis_positions.items():
+            axis = int(axis)
+            if axis not in (0, 1, 2):
+                continue
+
+            if not isinstance(position, (tuple, list)) or len(position) != 2:
+                continue
+
+            slice_index, slice_count = int(position[0]), int(position[1])
+            if slice_count <= 0:
+                continue
+
+            slice_count = max(1, slice_count)
+            slice_index = max(0, min(slice_count - 1, slice_index))
+            t = (float(slice_index) + 0.5) / float(slice_count)
+
+            if axis == 0:
+                # YZ plane at X
+                x = float(minx) + t * float(maxx - minx)
+                vertices = np.array(
+                    [
+                        [x, miny, minz],
+                        [x, maxy, minz],
+                        [x, maxy, maxz],
+                        [x, miny, maxz],
+                    ],
+                    dtype=np.float32,
+                )
+            elif axis == 1:
+                # XZ plane at Y
+                y = float(miny) + t * float(maxy - miny)
+                vertices = np.array(
+                    [
+                        [minx, y, minz],
+                        [maxx, y, minz],
+                        [maxx, y, maxz],
+                        [minx, y, maxz],
+                    ],
+                    dtype=np.float32,
+                )
+            else:
+                # XY plane at Z
+                z = float(minz) + t * float(maxz - minz)
+                vertices = np.array(
+                    [
+                        [minx, miny, z],
+                        [maxx, miny, z],
+                        [maxx, maxy, z],
+                        [minx, maxy, z],
+                    ],
+                    dtype=np.float32,
+                )
+
+            item = self._slice_indicator_items.get(axis)
+            if item is None:
+                mesh_data = gl.MeshData(vertexes=vertices, faces=faces)
+                item = gl.GLMeshItem(
+                    meshdata=mesh_data,
+                    smooth=False,
+                    drawFaces=False,
+                    drawEdges=True,
+                    color=axis_colors[axis],
+                    shader="shaded",
+                )
+                item.opts["edgeColor"] = axis_colors[axis]
+                self._view.addItem(item)
+                self._slice_indicator_items[axis] = item
+            else:
+                item.setMeshData(vertexes=vertices, faces=faces)
+                item.setColor(axis_colors[axis])
+                # Keep indicator planes as outlines only.
+                item.opts["drawFaces"] = False
+                item.opts["drawEdges"] = True
+                item.opts["edgeColor"] = axis_colors[axis]
+
+            active_axes.add(axis)
+
+        for axis, item in self._slice_indicator_items.items():
+            if axis not in active_axes:
+                item.setVisible(False)
 
         self._slice_indicator_visible = True
-        self._slice_indicator_item.setVisible(True)
+        for axis in active_axes:
+            self._slice_indicator_items[axis].setVisible(True)
 
     def get_scene_bounds(self):
         blocks = [d["points"] for d in self.point_clouds.values() if len(d["points"]) > 0]

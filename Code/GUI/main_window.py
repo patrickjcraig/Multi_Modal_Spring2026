@@ -39,6 +39,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.scans = {}
         self.source_scan_id = None
         self.target_scan_id = None
+        self.slice_viewer_global_enabled = False
 
         # controllers encapsulate the bulk of the logic so the window stays small
         self.workspace_controller = WorkspaceController(self)
@@ -167,18 +168,23 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self._update_transform_status()
 
     def toggle_slice_viewer(self):
-        record = self.current_scan()
-        if record is None:
-            self.statusbar.showMessage("Select a scan tab before opening Slice Viewer.")
+        if not self.scans:
+            self.statusbar.showMessage("Import a scan tab before toggling Slice Viewer.")
             return
 
-        record.tab.toggle_slice_viewer()
-        if record.tab.is_slice_viewer_enabled():
+        self.slice_viewer_global_enabled = not self.slice_viewer_global_enabled
+        for record in self.scans.values():
+            if self.slice_viewer_global_enabled:
+                record.tab.enable_slice_viewer()
+            else:
+                record.tab.disable_slice_viewer()
+
+        if self.slice_viewer_global_enabled:
             self.statusbar.showMessage(
-                "Slice Viewer enabled. Use the slider or Up/Down keys to move through slices."
+                "Slice Viewer enabled for all tabs. Use the 3D slider/axis or Up/Down keys to move through slices."
             )
         else:
-            self.statusbar.showMessage("Slice Viewer disabled.")
+            self.statusbar.showMessage("Slice Viewer disabled for all tabs.")
 
     def reset_affine_matrix_to_identity(self):
         self._set_affine_matrix_ui(np.eye(4, dtype=float))
@@ -348,6 +354,9 @@ class AppTest(QMainWindow, Ui_MainWindow):
         if make_current:
             self.scanTabs.setCurrentIndex(index)
 
+        if self.slice_viewer_global_enabled:
+            tab.enable_slice_viewer()
+
         self._sync_selection_ui()
         return scan_id
 
@@ -371,6 +380,8 @@ class AppTest(QMainWindow, Ui_MainWindow):
         if volume_source is not None:
             record.volume_source = volume_source
             record.tab.set_volume_source(volume_source)
+            if self.slice_viewer_global_enabled:
+                record.tab.enable_slice_viewer()
 
         index = self.scanTabs.indexOf(record.tab)
         if index >= 0:
