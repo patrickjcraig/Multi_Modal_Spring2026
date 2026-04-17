@@ -63,6 +63,11 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.actionExport_Registration.setShortcut("Ctrl+E")
         self.menuFiles.addAction(self.actionExport_Registration)
 
+        self.actionPCA_Slice_Fusion = QAction("PCA Fuse Current Z Slice", self)
+        self.actionPCA_Slice_Fusion.setObjectName("actionPCA_Slice_Fusion")
+        self.actionPCA_Slice_Fusion.setShortcut("Ctrl+Shift+F")
+        self.menuFiles.addAction(self.actionPCA_Slice_Fusion)
+
         # The tab widget now lives in the .ui file; clear the placeholder page.
         self.scanTabs.clear()
         self.scanTabs.setTabsClosable(True)
@@ -109,6 +114,7 @@ class AppTest(QMainWindow, Ui_MainWindow):
         self.actionSave_Workspace.triggered.connect(self.workspace_controller.save)
         self.actionLoad_Workspace.triggered.connect(self.workspace_controller.load)
         self.actionExport_Registration.triggered.connect(self.exporter.export_current_registration_tiff_stack)
+        self.actionPCA_Slice_Fusion.triggered.connect(self.exporter.fuse_current_registration_slice_pca)
 
         self.actionImport_XRay.triggered.connect(self.importer.open_xray_dialog)
         self.actionImport_SAM.triggered.connect(self.importer.open_sam_dialog)

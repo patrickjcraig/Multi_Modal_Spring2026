@@ -264,6 +264,50 @@ def inspect_array_volume(file_path: str, file_type: str, dataset_path: str | Non
     raise ValueError(f"Unsupported file type '{file_type}'")
 
 
+def inspect_volume_source(volume_source: VolumeSource):
+    source_type = str(getattr(volume_source, "source_type", "") or "").strip().lower()
+    if source_type == "tiff_stack":
+        return inspect_tiff_stack(volume_source.path)
+    if source_type == "png_stack":
+        return inspect_png_stack(volume_source.path)
+    if source_type in {"npy", "h5"}:
+        return inspect_array_volume(
+            file_path=volume_source.path,
+            file_type=source_type,
+            dataset_path=getattr(volume_source, "dataset_path", None),
+        )
+    raise ValueError(f"Unsupported volume source type '{source_type}'")
+
+
+def load_volume_region_zyx(
+    volume_source: VolumeSource,
+    z_slice=slice(None),
+    y_slice=slice(None),
+    x_slice=slice(None),
+):
+    source_type = str(getattr(volume_source, "source_type", "") or "").strip().lower()
+
+    if source_type in {"tiff_stack", "png_stack"}:
+        volume = _make_lazy_volume_zyx(volume_source.path, source_type)
+        region = volume[z_slice, y_slice, x_slice].compute()
+        return np.ascontiguousarray(np.asarray(region))
+
+    if source_type == "npy":
+        array_zyx = load_npy_volume(volume_source.path)
+        region = np.asarray(array_zyx[z_slice, y_slice, x_slice])
+        return np.ascontiguousarray(region.copy())
+
+    if source_type == "h5":
+        handle, dataset, _resolved_path = load_h5_volume(volume_source.path, volume_source.dataset_path)
+        try:
+            region = np.asarray(dataset[z_slice, y_slice, x_slice])
+            return np.ascontiguousarray(region.copy())
+        finally:
+            handle.close()
+
+    raise ValueError(f"Unsupported volume source type '{source_type}'")
+
+
 def _center_crop_bounds(shape_zyx, crop_zyx):
     Z, Y, X = shape_zyx
     cz, cy, cx = crop_zyx

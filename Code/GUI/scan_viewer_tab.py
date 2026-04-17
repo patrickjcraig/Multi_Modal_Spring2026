@@ -52,6 +52,7 @@ class ScanViewerTab(QWidget):
         self._last_volume_shape_xyz = None
         self._showing_volume_mode = False
         self._volume_xyz = None
+        self._volume_metadata = None
         self._slice_viewer_enabled = False
 
         layout = QVBoxLayout(self)
@@ -165,6 +166,7 @@ class ScanViewerTab(QWidget):
         self._volume_loaded = False
         self._last_volume_shape_xyz = None
         self._volume_xyz = None
+        self._volume_metadata = None
         has_source = volume_source is not None
         self.btn_toggle_volume.setEnabled(has_source)
         self.spin_volume_downsample.setEnabled(has_source)
@@ -275,6 +277,7 @@ class ScanViewerTab(QWidget):
     def _on_volume_loaded(self, volume, metadata, show_after_load):
         self.viewer.set_volume(volume)
         self._volume_xyz = volume
+        self._volume_metadata = dict(metadata)
         self._last_volume_shape_xyz = tuple(int(v) for v in volume.shape)
         self._sync_volume_view_from_geometry(volume_shape_xyz=volume.shape)
         self._volume_loaded = True
@@ -324,10 +327,16 @@ class ScanViewerTab(QWidget):
         self.btn_reload_volume.setEnabled(self.volume_source is not None)
         self.spin_volume_downsample.setEnabled(self.volume_source is not None)
         self.volume_status_label.setText(f"Volume error: {message}")
+        self._volume_metadata = None
         if self._slice_viewer_enabled:
             self.slice_viewer.set_error_message(message)
             self.viewer.clear_slice_indicator()
         self._volume_worker = None
+
+    def get_volume_preview_metadata(self):
+        if self._volume_metadata is None:
+            return None
+        return dict(self._volume_metadata)
 
     def set_point_clouds(self, clouds):
         """Replace the displayed point clouds with ``clouds``.

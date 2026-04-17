@@ -334,6 +334,22 @@ class RegistrationController(QObject):
         self.global_transform_model = results.get("global_transform_model", self.global_transform_model)
         self.pre_scale_context = results.get("pre_scale")
         self.registration_voxel_size_used = results.get("registration_voxel_size")
+        result_record = mw.scans.get(self.result_scan_id)
+        if result_record is not None:
+            result_record.metadata["global_transform_model"] = self.global_transform_model
+            result_record.metadata["pre_scale_context"] = copy.deepcopy(self.pre_scale_context)
+            result_record.metadata["scale_diagnostics"] = copy.deepcopy(self.scale_diagnostics)
+            result_record.metadata["registration_voxel_size_used"] = self.registration_voxel_size_used
+            if getattr(self, "ransac_result", None) is not None:
+                result_record.metadata["ransac_transformation"] = np.asarray(
+                    self.ransac_result.transformation,
+                    dtype=float,
+                ).tolist()
+            if getattr(self, "icp_result", None) is not None:
+                result_record.metadata["icp_transformation"] = np.asarray(
+                    self.icp_result.transformation,
+                    dtype=float,
+                ).tolist()
 
         self._update_results_display()
 
@@ -357,11 +373,16 @@ class RegistrationController(QObject):
             fallback_reason = fused_volume_metadata.get("overlay_fallback_reason")
             if fallback_reason:
                 self.result_volume_status += f" | fallback={fallback_reason}"
+            if result_record is not None:
+                result_record.metadata["result_volume_source"] = self._serialize_volume_source(fused_volume_source)
+                result_record.metadata["fusion_volume_metadata"] = copy.deepcopy(fused_volume_metadata)
             mw.update_scan_tab(self.result_scan_id, volume_source=fused_volume_source)
         else:
             reason = fused_volume_metadata.get("reason", "unknown")
             self.result_volume_source = None
             self.result_volume_status = f"fused reconstruction unavailable ({reason})"
+            if result_record is not None:
+                result_record.metadata["fusion_volume_metadata"] = copy.deepcopy(fused_volume_metadata)
 
         self._display_registration_results()
 
@@ -790,6 +811,11 @@ class RegistrationController(QObject):
             "path": output_path,
             "points": int(src_nz.shape[0]),
             "fusion_method": "registered volume overlay",
+            "target_crop_origin_zyx": tuple(int(v) for v in tgt_origin_zyx),
+            "target_downsample_zyx": int(tgt_step),
+            "target_preview_shape_xyz": tuple(int(v) for v in tgt_xyz.shape),
+            "source_crop_origin_zyx": tuple(int(v) for v in src_origin_zyx),
+            "source_downsample_zyx": int(src_step),
         }
 
     def _build_fused_pointcloud_volume_source(self):
