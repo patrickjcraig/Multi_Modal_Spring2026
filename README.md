@@ -36,6 +36,11 @@ When `Code/UI_V1.ui` changes, regenerate the Python UI module:
 pyside6-uic Code/UI_V1.ui -o Code/ui_mainwindow.py
 ```
 
+## Output Screenshots
+Example output image from the current toolkit workflows:
+
+![Upscaled output example](TestCode/Upscale/w_AG65.png)
+
 ## Roadmap
 1. Strengthen modular ingestion across modalities and metadata styles.
 2. Expand spatial alignment robustness across resolution and coordinate differences.
