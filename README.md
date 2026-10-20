@@ -1,28 +1,44 @@
-# Multi_Modal_Spring2026
+# Multi-Modal Microscopy Toolkit
 
-## Project Milestones
-1.	Develop a modular data ingestion framework capable of handling multiple microscopy modalities such as X-ray, scanning acoustic microscopy, and optical imaging.
-    a. Implement a CT algorithm for 3D data such as x-ray and model in open3d
-  	b. Create a script to seperate non-image data (headers, tool settings) from image data for each modality
-  	c. Add support for time-series data such as SAM using FFT methods
-  	d. Add preprocessing and smoothening algorithms to reduce noise affects
-2.	Implement spatial alignment methods to register datasets acquired at different resolutions and coordinate systems.
-    a. Create a feature extraction method (edges, verticies) for our registration model
-  	b. Global Registration to roughly align coordinate systems
-  	c. Local Registration to best match the 3D features using ICP
-  	d. Have a tab for accuracy metrics for our registration
-3.	Enable region-based analysis to support localization of defects across modalities
-    a. Define regions of interest based on extracted features such as edges and verticies
-  	b. Use classifiers to indicate whether a region contains a defect 
-  	c.
-  	d.
-5.	Provide visualization tools for side-by-side and overlaid inspection to highlight complementary information.
-    a. Layer slice views for 3D volumes
-  	b. 
-  	c.
-  	d.
-6.	Establish a standardized data and metadata structure to support repeatable and scalable workflows.
-    a.
-  	b.
-  	c.
-  	d.
+A Python desktop application for loading, visualizing, and registering multi-modal microscopy and scan data (CT, SAM, optical, and mesh-based inputs).
+
+## Repository Rename
+This project has been renamed from `Multi_Modal_Spring2026` to **Multi-Modal Microscopy Toolkit**.
+
+## Current Capabilities
+- PySide6-based GUI for interactive workflows
+- OpenGL-powered viewers for mesh, point cloud, and volume data
+- Registration pipeline utilities (global/local alignment + ICP workflow components)
+- Data import and conversion helpers for common imaging formats
+
+## Project Structure
+- `/Code` — main application source (GUI, controllers, widgets, utilities)
+- `/UI` — Qt Designer UI files and generated UI bindings
+- `/TestCode` — experimental scripts and prototype workflows
+- `requirements.txt` — Python dependencies
+
+## Setup
+1. Create and activate a Python environment.
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+## Run
+From the repository root:
+```bash
+python3 Code/test.py
+```
+
+## UI Regeneration
+When `Code/UI_V1.ui` changes, regenerate the Python UI module:
+```bash
+pyside6-uic Code/UI_V1.ui -o Code/ui_mainwindow.py
+```
+
+## Roadmap
+1. Strengthen modular ingestion across modalities and metadata styles.
+2. Expand spatial alignment robustness across resolution and coordinate differences.
+3. Improve defect-localization and region-based analytics.
+4. Enhance side-by-side and overlaid visualization workflows.
+5. Formalize repeatable data/metadata organization for scalable processing.
